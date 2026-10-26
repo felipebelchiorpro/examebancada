@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#0f766e" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#grad)" />
+  <!-- Tubo de Ensaio estilizado -->
+  <path d="M 220 120 L 220 310 C 220 350 250 380 290 380 C 330 380 360 350 360 310 L 360 120 Z" fill="#ffffff" opacity="0.9" />
+  <!-- Líquido Urina Citrino / Ouro -->
+  <path d="M 225 240 L 225 310 C 225 345 252 375 290 375 C 328 375 355 345 355 310 L 355 240 Z" fill="#eab308" />
+  <!-- Borda superior do tubo -->
+  <rect x="210" y="110" width="160" height="18" rx="9" fill="#f8fafc" />
+  <!-- Cruz Médica SUS / Laboratório -->
+  <path d="M 160 190 H 200 V 150 H 220 V 190 H 260 V 210 H 220 V 250 H 200 V 210 H 160 Z" fill="#38bdf8" opacity="0.3" />
+  <!-- Bolhas do sedimento -->
+  <circle cx="270" cy="290" r="12" fill="#fef08a" opacity="0.8" />
+  <circle cx="310" cy="330" r="9" fill="#fef08a" opacity="0.8" />
+  <circle cx="280" cy="340" r="7" fill="#fef08a" opacity="0.8" />
+</svg>

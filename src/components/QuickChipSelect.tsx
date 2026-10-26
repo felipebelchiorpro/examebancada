@@ -25,12 +25,12 @@ export const QuickChipSelect: React.FC<QuickChipSelectProps> = ({
 }) => {
   return (
     <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between">
-        <label className="text-xs font-semibold text-slate-700 tracking-wide uppercase">
+      <div className="flex flex-wrap items-baseline justify-between gap-1">
+        <label className="text-[11px] sm:text-xs font-bold text-slate-800 tracking-wide uppercase">
           {label}
         </label>
         {sublabel && (
-          <span className="text-[11px] text-slate-400 font-mono">{sublabel}</span>
+          <span className="text-[10px] sm:text-[11px] text-slate-400 font-mono">{sublabel}</span>
         )}
       </div>
 
@@ -38,7 +38,7 @@ export const QuickChipSelect: React.FC<QuickChipSelectProps> = ({
         className={
           columns === "auto"
             ? "flex flex-wrap gap-1.5"
-            : `grid grid-cols-${columns} gap-1.5`
+            : `grid grid-cols-2 sm:grid-cols-${columns} gap-1.5`
         }
       >
         {options.map((opt) => {
@@ -47,9 +47,9 @@ export const QuickChipSelect: React.FC<QuickChipSelectProps> = ({
           let colorClass = "";
           if (isSelected) {
             if (opt.isAbnormal) {
-              colorClass = "bg-amber-600 text-white font-bold shadow-md shadow-amber-200 border-amber-600 ring-2 ring-amber-400/50";
+              colorClass = "bg-amber-600 text-white font-bold shadow-sm shadow-amber-200 border-amber-600 ring-2 ring-amber-400/50";
             } else {
-              colorClass = "bg-teal-700 text-white font-bold shadow-md shadow-teal-200 border-teal-700 ring-2 ring-teal-400/50";
+              colorClass = "bg-teal-700 text-white font-bold shadow-sm shadow-teal-200 border-teal-700 ring-2 ring-teal-400/50";
             }
           } else {
             if (opt.isAbnormal) {
@@ -64,8 +64,10 @@ export const QuickChipSelect: React.FC<QuickChipSelectProps> = ({
               key={opt.value}
               type="button"
               onClick={() => onChange(opt.value)}
-              className={`transition-all duration-150 rounded-lg border text-center select-none active:scale-95 touch-manipulation ${
-                compact ? "px-2.5 py-1.5 text-xs min-h-[36px]" : "px-3 py-2 text-xs md:text-sm min-h-[42px] font-medium"
+              className={`transition-all duration-150 rounded-xl border text-center select-none active:scale-95 touch-manipulation flex-1 min-w-[74px] sm:flex-initial ${
+                compact
+                  ? "px-2 py-1.5 text-[11px] min-h-[36px]"
+                  : "px-2.5 py-2 text-xs sm:text-sm min-h-[40px] font-semibold"
               } ${colorClass}`}
             >
               {opt.label}
@@ -81,7 +83,7 @@ export const QuickChipSelect: React.FC<QuickChipSelectProps> = ({
             type="text"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="px-2.5 py-1 text-xs border border-slate-300 rounded font-mono w-36 focus:ring-1 focus:ring-teal-500 focus:border-teal-500 bg-white"
+            className="px-2.5 py-1 text-xs border border-slate-300 rounded-lg font-mono w-36 focus:ring-1 focus:ring-teal-500 focus:border-teal-500 bg-white"
             placeholder="Digite aqui..."
           />
         </div>

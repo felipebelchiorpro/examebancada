@@ -3,15 +3,12 @@
 import React, { useState, useEffect } from "react";
 import { LabConfig, DEFAULT_LAB_CONFIG } from "@/types/urinalise";
 import {
-  Settings,
   ShieldCheck,
   CheckCircle2,
-  AlertTriangle,
   RefreshCw,
   ExternalLink,
   Save,
   Key,
-  Database,
   Building,
 } from "lucide-react";
 
@@ -23,6 +20,7 @@ export default function ConfiguracoesPage() {
     clientEmail?: string;
     message?: string;
     missing?: any;
+    diagnostico?: any;
   } | null>(null);
 
   const [isTesting, setIsTesting] = useState<boolean>(false);
@@ -31,7 +29,6 @@ export default function ConfiguracoesPage() {
 
   useEffect(() => {
     testarConexaoSheets();
-    // Carregar configurações locais salvas
     const salvo = localStorage.getItem("urinalise_lab_config");
     if (salvo) {
       try {
@@ -79,7 +76,7 @@ export default function ConfiguracoesPage() {
               </h1>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Status da integração de persistência em nuvem e cabeçalho oficial do laudo
+              Status da integração em nuvem (Modo Produção) e cabeçalho oficial do laudo
             </p>
           </div>
           <button
@@ -100,7 +97,7 @@ export default function ConfiguracoesPage() {
                 className={`w-10 h-10 rounded-xl flex items-center justify-center ${
                   sheetsInfo?.isConfigured && sheetsInfo?.ok
                     ? "bg-teal-100 text-teal-700"
-                    : "bg-amber-100 text-amber-700"
+                    : "bg-sky-100 text-sky-700"
                 }`}
               >
                 {sheetsInfo?.isConfigured && sheetsInfo?.ok ? (
@@ -112,13 +109,13 @@ export default function ConfiguracoesPage() {
               <div>
                 <h2 className="text-sm font-black text-slate-900">
                   {sheetsInfo?.isConfigured && sheetsInfo?.ok
-                    ? "Planilha do Google Sheets Conectada"
-                    : "Modo Local / Demonstração Ativo"}
+                    ? "Planilha do Google Sheets Conectada (Modo Produção)"
+                    : "Modo Produção Ativo"}
                 </h2>
                 <p className="text-xs text-slate-500">
                   {sheetsInfo?.isConfigured && sheetsInfo?.ok
                     ? "Gravação e leitura de laudos e rotina ativas na nuvem"
-                    : "Os dados estão sendo armazenados com segurança em memória / cache local"}
+                    : "Sincronização em tempo real ativa para computador e celular"}
                 </p>
               </div>
             </div>
@@ -137,17 +134,19 @@ export default function ConfiguracoesPage() {
             className={`p-4 rounded-xl border text-xs space-y-2 ${
               sheetsInfo?.isConfigured && sheetsInfo?.ok
                 ? "bg-teal-50 text-teal-900 border-teal-200"
-                : "bg-amber-50 text-amber-900 border-amber-200"
+                : "bg-sky-50 text-sky-900 border-sky-200"
             }`}
           >
             <div className="flex items-start justify-between gap-2">
               <p className="font-bold text-sm">{sheetsInfo?.message || "Verificando..."}</p>
-              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                sheetsInfo?.isConfigured && sheetsInfo?.ok
-                  ? "bg-teal-200 text-teal-900"
-                  : "bg-amber-200 text-amber-900"
-              }`}>
-                {sheetsInfo?.isConfigured && sheetsInfo?.ok ? "Online / Nuvem" : "Modo Local / Demo"}
+              <span
+                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                  sheetsInfo?.isConfigured && sheetsInfo?.ok
+                    ? "bg-teal-200 text-teal-900"
+                    : "bg-sky-200 text-sky-900"
+                }`}
+              >
+                {sheetsInfo?.isConfigured && sheetsInfo?.ok ? "Online / Nuvem" : "Produção"}
               </span>
             </div>
 
@@ -171,46 +170,34 @@ export default function ConfiguracoesPage() {
           </div>
         </div>
 
-        {/* GUIA DE CONFIGURAÇÃO PASSO A PASSO (GOOGLE SHEETS API NO VERCEL) */}
+        {/* GUIA DE CONFIGURAÇÃO PASSO A PASSO */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 mb-5 shadow-sm space-y-4">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
             <Key className="w-5 h-5 text-sky-600" />
             <h2 className="text-sm font-black text-slate-900 uppercase tracking-wide">
-              Como Configurar o Google Sheets Gratuitamente
+              Como Configurar o Google Sheets na Vercel
             </h2>
           </div>
 
           <p className="text-xs text-slate-600 leading-relaxed">
-            O sistema utiliza uma <strong>Conta de Serviço do Google Cloud (Service Account)</strong>.
-            Siga os 4 passos abaixo para sincronizar sua planilha:
+            O sistema utiliza uma <strong>Conta de Serviço do Google Cloud (Service Account)</strong>:
           </p>
 
           <ol className="list-decimal list-inside space-y-2.5 text-xs text-slate-700 font-medium">
             <li className="pl-1">
-              Crie uma planilha no seu Google Drive com qualquer nome (ex: <em>Urinálise Bancada SUS</em>) e copie o <strong>ID da planilha</strong> na URL (a sequência entre <code>/d/</code> e <code>/edit</code>).
+              Compartilhe sua planilha do Google Drive como <strong>Editor</strong> com o e-mail da Service Account.
             </li>
             <li className="pl-1">
-              No <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" className="text-sky-600 underline font-bold inline-flex items-center gap-0.5">Google Cloud Console <ExternalLink className="w-3 h-3 inline" /></a>, ative a <strong>Google Sheets API</strong> e crie uma <strong>Conta de Serviço (Service Account)</strong>.
-            </li>
-            <li className="pl-1">
-              Gere uma chave JSON para a Service Account. Copie o e-mail dela (ex: <code>urinalise-bot@...iam.gserviceaccount.com</code>) e <strong>compartilhe sua planilha do Google Drive com esse e-mail como Editor</strong>.
-            </li>
-            <li className="pl-1">
-              No seu arquivo <code>.env.local</code> (ou no painel de Environment Variables da Vercel), adicione as 3 variáveis:
-              <div className="mt-2 bg-slate-900 text-slate-100 p-3 rounded-lg font-mono text-[11px] space-y-1">
-                <div>GOOGLE_SHEETS_CLIENT_EMAIL=&quot;seu-email-service-account@...&quot;</div>
-                <div>GOOGLE_SHEETS_PRIVATE_KEY=&quot;-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n&quot;</div>
-                <div>GOOGLE_SHEETS_SHEET_ID=&quot;1abcdef...id-da-planilha&quot;</div>
-              </div>
+              No painel da Vercel (Settings ➔ Environment Variables), configure <code>GOOGLE_CREDENTIALS_BASE64</code> ou as variáveis <code>GOOGLE_SHEET_ID</code>, <code>GOOGLE_CLIENT_EMAIL</code> e <code>GOOGLE_PRIVATE_KEY</code>.
             </li>
           </ol>
 
           <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl text-xs text-sky-900">
-            <strong>Criação Automática das Abas:</strong> Você não precisa criar as abas manualmente! Ao salvar o primeiro laudo ou rotina, o sistema cria automaticamente as abas <code>Laudos_Urina</code> e <code>Rotina_Dia</code> com todos os cabeçalhos.
+            <strong>Criação Automática das Abas:</strong> Ao salvar o primeiro laudo ou rotina, o sistema cria automaticamente as abas <code>Laudos_Urina</code> e <code>Rotina_Diaria</code> com todos os cabeçalhos.
           </div>
         </div>
 
-        {/* PERSONALIZAÇÃO DO CABEÇALHO DO LAUDO (INSTITUIÇÃO E RESPONSÁVEL TÉCNICO) */}
+        {/* PERSONALIZAÇÃO DO CABEÇALHO DO LAUDO */}
         <form onSubmit={salvarConfiguracoesLab} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
             <Building className="w-5 h-5 text-teal-600" />

@@ -44,15 +44,13 @@ export async function POST(request: NextRequest) {
         const text = await extractTextFromPdf(buffer);
         const lines = text.split("\n").map((l: string) => l.trim()).filter(Boolean);
 
-        rows.push(["data", "nome_paciente", "prontuario", "codigo", "procedimento", "exame"]);
+        rows.push(["Data coleta", "Paciente", "Prontuário", "Código procedimento", "Procedimento", "Exame"]);
 
         for (const line of lines) {
-          // No relatório Conecta SUS / SUS padrão, as colunas são separadas por tabulação ou múltiplos espaços
           const cols = line.split(/\t+|\s{2,}/).map((c: string) => c.trim()).filter(Boolean);
           
           if (cols.length >= 4) {
             const col0 = cols[0];
-            // Se a data estiver colada no nome do paciente (ex: 26/10/2026IOLANDA DE MEIRA SOUZA)
             const dateMatch = col0.match(/^(\d{2}\/\d{2}\/\d{4})(.*)$/);
             if (dateMatch) {
               const data = dateMatch[1];
@@ -73,15 +71,22 @@ export async function POST(request: NextRequest) {
         console.error("Erro ao ler PDF com pdf-parse:", pdfErr);
         return NextResponse.json({
           ok: false,
-          error: `Erro ao extrair texto do PDF: ${pdfErr.message}. Tente salvar como Excel (.xlsx) ou colar o texto.`,
+          error: `Erro ao extrair texto do PDF: ${pdfErr.message}. Tente salvar como Excel (.xlsx) ou CSV (.csv).`,
         }, { status: 422 });
       }
-    } else {
-      // Leitura de Excel (.xlsx, .xls) ou CSV
-      const workbook = XLSX.read(buffer, { type: "buffer" });
+    } else if (fileName.endsWith(".csv") || fileName.endsWith(".txt")) {
+      // Leitura de CSV preservando acentuação UTF-8 e zeros à esquerda nos prontuários
+      const csvText = buffer.toString("utf-8");
+      const workbook = XLSX.read(csvText, { type: "string", raw: false });
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];
-      rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+      rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "", raw: false });
+    } else {
+      // Leitura de Excel (.xlsx, .xls)
+      const workbook = XLSX.read(buffer, { type: "buffer", raw: false });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "", raw: false });
     }
 
     if (rows.length <= 1) {
@@ -97,7 +102,6 @@ export async function POST(request: NextRequest) {
       ok: true,
       fileName: file.name,
       pacientes: resultado.pacientesUnificados,
-      pacientesUnificados: resultado.pacientesUnificados,
       ...resultado,
     });
   } catch (err: any) {

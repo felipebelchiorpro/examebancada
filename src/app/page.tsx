@@ -1,152 +1,116 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import {
-  LaudoUrina,
-  RotinaItem,
-  StatusLaudo,
-  VALORES_PADRAO_NORMAL,
-} from "@/types/urinalise";
 import { QuickChipSelect } from "@/components/QuickChipSelect";
-import { StatusBadge } from "@/components/StatusBadge";
-import { RelatorioBancadaDiaPrintView } from "@/components/RelatorioBancadaDiaPrintView";
+import { LaudoUrina, ItemRotina, StatusLaudo } from "@/lib/googleSheets";
+import { formatarProntuario } from "@/lib/extratorBancada";
 import { MapaBancadaPrintView } from "@/components/MapaBancadaPrintView";
+import { RelatorioBancadaDiaPrintView } from "@/components/RelatorioBancadaDiaPrintView";
 import {
-  Eye,
-  X,
-  FileText,
-  Filter,
-  Calendar,
-  Scan,
-  UserCheck,
+  Search,
   CheckCircle2,
   AlertTriangle,
   Save,
   RotateCcw,
+  UserCheck,
   Sparkles,
-  ClipboardList,
-  Search,
-  Check,
-  ListOrdered,
   ArrowRight,
-  FlaskConical,
-  Clock,
+  ListOrdered,
+  Check,
+  Scan,
   UploadCloud,
-  FileSpreadsheet,
-  RefreshCw,
   Printer,
-  Monitor,
+  FileSpreadsheet,
   Smartphone,
-  CheckCircle,
-  Boxes,
-  Table,
+  Clock,
+  RefreshCw,
+  X,
+  Eye,
 } from "lucide-react";
 
-export default function BancadaPage() {
-  const prontuarioInputRef = useRef<HTMLInputElement>(null);
+const VALORES_PADRAO_NORMAL = {
+  volume: "60 mL",
+  cor: "Amarelo citrino",
+  aspecto: "Límpido",
+  densidade: "1.020",
+  ph: "6.0",
+  proteina: "Negativo",
+  glicose: "Negativo",
+  cetona: "Negativo",
+  bilirrubina: "Negativo",
+  urobilinogenio: "Normal",
+  sangue: "Negativo",
+  nitrito: "Negativo",
+  leucocitos_fita: "Negativo",
+  celulas_epiteliais: "4.000 /mL",
+  leucocitos_campo: "4.000 /mL",
+  hemacias_campo: "1.000 /mL",
+  bacterias: "fb",
+  muco: "Ausente",
+  cristais: "Ausentes",
+  cilindros: "Ausentes",
+  outros_elementos: "Ausentes",
+};
 
-  // Estados principais
+export default function BancadaOperacionalPage() {
+  // Detecção automática: Computador = Painel de Tiragem & Impressão | Celular = Contagem de Bancada
   const [modoTela, setModoTela] = useState<"desktop" | "mobile">("desktop");
-  const [bancadaAtiva, setBancadaAtiva] = useState<"urina" | "imuno" | "coag" | "pso">("urina");
-  const [rotinaDia, setRotinaDia] = useState<RotinaItem[]>([]);
-  const [laudosDia, setLaudosDia] = useState<LaudoUrina[]>([]);
-  const [modoRelatorio, setModoRelatorio] = useState<"tiras" | "caixas" | "tabela">("tiras");
-  const [tipoImpressao, setTipoImpressao] = useState<"triagem" | "resultados">("triagem");
-  const [temAboRh, setTemAboRh] = useState<boolean>(false);
-  const [resultadoAboRh, setResultadoAboRh] = useState<string>("O Positivo (+)");
-  const [dataHoje, setDataHoje] = useState<string>("");
-  const [isUploading, setIsUploading] = useState<boolean>(false);
-  const [prontuario, setProntuario] = useState<string>("");
-  const [pacienteInfo, setPacienteInfo] = useState<RotinaItem | null>(null);
-  const [mostrarSugestoes, setMostrarSugestoes] = useState<boolean>(false);
-  const [isSearching, setIsSearching] = useState<boolean>(false);
-  const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "warning" | "error" } | null>(null);
 
-  // Estados para Filtros, Pesquisa e Prévia no Computador
+  // Controle de qual impressão exibir no window.print() e no modal de pré-visualização
+  const [tipoImpressao, setTipoImpressao] = useState<"triagem" | "resultados">("triagem");
+  const [modoRelatorio, setModoRelatorio] = useState<"tiras" | "caixas" | "tabela">("tiras");
+  const [previewImpressao, setPreviewImpressao] = useState<"triagem" | "canhotos" | null>(null);
+
+  // Estado de Upload de Arquivo (Conecta SUS)
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [resumoExtracao, setResumoExtracao] = useState<{
+    totalExamesBancada: number;
+    totalPacientes: number;
+    totalDescartadosBioquimica: number;
+  } | null>(null);
+
+  // Filtros da Tabela no Painel Desktop
   const [filtroTexto, setFiltroTexto] = useState<string>("");
   const [filtroStatus, setFiltroStatus] = useState<"todos" | "pendentes" | "concluidos">("todos");
   const [filtroTipoExame, setFiltroTipoExame] = useState<string>("todos");
-  const [previewImpressao, setPreviewImpressao] = useState<"triagem" | "canhotos" | null>(null);
 
-  // Contadores e Filtros Inteligentes
-  const concluidosCount = React.useMemo(() => {
-    return rotinaDia.filter((p) => p.tem_laudo || laudosDia.some((l) => l.prontuario === p.prontuario)).length;
-  }, [rotinaDia, laudosDia]);
+  // Estado de Busca e Identificação do Paciente (Mobile)
+  const [prontuario, setProntuario] = useState<string>("");
+  const [pacienteInfo, setPacienteInfo] = useState<ItemRotina | null>(null);
+  const [nomeManual, setNomeManual] = useState<string>("");
+  const [idadeManual, setIdadeManual] = useState<string>("");
+  const [postoManual, setPostoManual] = useState<string>("Conecta SUS");
+  const [solicitanteManual, setSolicitanteManual] = useState<string>("Conecta SUS");
 
-  const pendentesCount = React.useMemo(() => {
-    return rotinaDia.length - concluidosCount;
-  }, [rotinaDia, concluidosCount]);
+  // Fila de Rotina do Dia e Laudos Gravados
+  const [rotinaDia, setRotinaDia] = useState<ItemRotina[]>([]);
+  const [laudosDia, setLaudosDia] = useState<LaudoUrina[]>([]);
+  const [dataHoje, setDataHoje] = useState<string>("");
+  const [mostrarSugestoes, setMostrarSugestoes] = useState<boolean>(false);
 
-  const totalExamesContagem = React.useMemo(() => {
-    let count = 0;
-    for (const p of rotinaDia) {
-      if (p.tem_urina || p.exame?.toUpperCase().includes("URINA") || p.exame?.toUpperCase().includes("EAS")) count++;
-      if (p.tem_abo_rh || p.exame?.toUpperCase().includes("ABO") || p.exame?.toUpperCase().includes("GRUPO") || p.exame?.toUpperCase().includes("RH")) count++;
-      if (p.tem_pso || p.exame?.toUpperCase().includes("PSO") || p.exame?.toUpperCase().includes("SANGUE OCULTO")) count++;
-      if (p.tem_vdrl || p.exame?.toUpperCase().includes("VDRL") || p.exame?.toUpperCase().includes("SIFILIS")) count++;
-      if (p.tem_beta_hcg || p.exame?.toUpperCase().includes("BETA") || p.exame?.toUpperCase().includes("HCG")) count++;
-      if (p.tem_coagulograma || p.exame?.toUpperCase().includes("COAGULO") || p.exame?.toUpperCase().includes("TAP")) count++;
-    }
-    return count || rotinaDia.length;
-  }, [rotinaDia]);
+  // Seleção Rápida de Bancada Ativa no Celular
+  const [bancadaAtiva, setBancadaAtiva] = useState<"urina" | "imuno" | "coag" | "pso">("urina");
 
-  const rotinaFiltradaDesktop = React.useMemo(() => {
-    return rotinaDia.filter((item) => {
-      if (filtroTexto.trim()) {
-        const query = filtroTexto.toLowerCase().trim();
-        const bateNome = item.nome_paciente.toLowerCase().includes(query);
-        const batePront = item.prontuario.toLowerCase().includes(query);
-        if (!bateNome && !batePront) return false;
-      }
-      const laudoGravado = laudosDia.find((l) => l.prontuario === item.prontuario);
-      const isConcluido = item.tem_laudo || Boolean(laudoGravado);
-      if (filtroStatus === "pendentes" && isConcluido) return false;
-      if (filtroStatus === "concluidos" && !isConcluido) return false;
-
-      if (filtroTipoExame !== "todos") {
-        const exUpper = (item.exame || "").toUpperCase();
-        if (filtroTipoExame === "urina" && !item.tem_urina && !exUpper.includes("URINA") && !exUpper.includes("EAS")) return false;
-        if (filtroTipoExame === "abo" && !item.tem_abo_rh && !exUpper.includes("ABO") && !exUpper.includes("GRUPO") && !exUpper.includes("RH")) return false;
-        if (filtroTipoExame === "pso" && !item.tem_pso && !exUpper.includes("PSO") && !exUpper.includes("SANGUE OCULTO")) return false;
-        if (filtroTipoExame === "vdrl" && !item.tem_vdrl && !exUpper.includes("VDRL") && !exUpper.includes("SIFILIS")) return false;
-        if (filtroTipoExame === "coag" && !item.tem_coagulograma && !exUpper.includes("COAGULO") && !exUpper.includes("TAP") && !exUpper.includes("TP")) return false;
-      }
-
-      return true;
-    });
-  }, [rotinaDia, laudosDia, filtroTexto, filtroStatus, filtroTipoExame]);
-
-  const handleImprimirTiragem = () => {
-    setTipoImpressao("triagem");
-    setTimeout(() => window.print(), 100);
-  };
-
-  const handleImprimirCanhotos = () => {
-    setTipoImpressao("resultados");
-    setTimeout(() => window.print(), 100);
-  };
-
-  // Form de Laudo
-  const [form, setForm] = useState<Omit<LaudoUrina, "prontuario" | "nome_paciente">>({
-    data_hora: "",
-    volume: "60 mL",
+  // Estados do Exame Físico-Químico e Sedimentoscopia (Urina I)
+  const [form, setForm] = useState({
     ...VALORES_PADRAO_NORMAL,
     observacoes: "",
-    status: "finalizado",
   });
 
-  // Estados de PSO (Pesquisa de Sangue Oculto)
+  // Estado para Pesquisa de Sangue Oculto nas Fezes (PSO)
   const [temPso, setTemPso] = useState<boolean>(false);
   const [resultadoPso, setResultadoPso] = useState<string>("Negativo");
   const [obsPso, setObsPso] = useState<string>("");
 
-  // Estados de Testes Rápidos e Provas de Bancada
+  // Estados para Outros Testes Rápidos & Provas de Bancada Manual
   const [temBetaHcg, setTemBetaHcg] = useState<boolean>(false);
   const [resultadoBetaHcg, setResultadoBetaHcg] = useState<string>("Negativo");
 
   const [temVhs, setTemVhs] = useState<boolean>(false);
   const [resultadoVhs, setResultadoVhs] = useState<string>("10 mm/1ª hora");
+
+  const [temAboRh, setTemAboRh] = useState<boolean>(false);
+  const [resultadoAboRh, setResultadoAboRh] = useState<string>("O Positivo (+)");
 
   const [temVdrl, setTemVdrl] = useState<boolean>(false);
   const [resultadoVdrl, setResultadoVdrl] = useState<string>("Não Reagente");
@@ -158,300 +122,419 @@ export default function BancadaPage() {
   const [resultadoFr, setResultadoFr] = useState<string>("Negativo (< 8 UI/mL)");
 
   const [temCoagulograma, setTemCoagulograma] = useState<boolean>(false);
-  const [coagTpTempo, setCoagTpTempo] = useState<string>("12.0 seg");
+  const [coagTpTempo, setCoagTpTempo] = useState<string>("12.5 seg");
   const [coagTpInr, setCoagTpInr] = useState<string>("1.00");
-  const [coagTtpaTempo, setCoagTtpaTempo] = useState<string>("31.0 seg");
+  const [coagTtpaTempo, setCoagTtpaTempo] = useState<string>("30.0 seg");
   const [coagTtpaRelacao, setCoagTtpaRelacao] = useState<string>("1.00");
   const [coagRepetido, setCoagRepetido] = useState<boolean>(false);
   const [coagTp1, setCoagTp1] = useState<string>("");
   const [coagTtpa1, setCoagTtpa1] = useState<string>("");
 
-  // Estado de Teste Rápido de Proteinúria (Gestante / Pré-Eclâmpsia)
+  // Teste Rápido de Proteinúria (Gestantes / Rastreio de Pré-Eclâmpsia)
   const [temProteinuriaRapida, setTemProteinuriaRapida] = useState<boolean>(false);
   const [resultadoProteinuriaRapida, setResultadoProteinuriaRapida] = useState<string>("Negativo");
 
-  // Nome do paciente manual se não vier da rotina
-  const [nomeManual, setNomeManual] = useState<string>("");
+  // Estados de UI e Feedback
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "warning" | "error";
+  } | null>(null);
 
-  // Carregar rotina do dia para alimentar a estante de tubos da bancada
-  const carregarRotinaDia = async () => {
-    try {
-      const res = await fetch("/api/rotina");
-      const data = await res.json();
-      if (data.ok && Array.isArray(data.rotina)) {
-        setRotinaDia(data.rotina);
+  const prontuarioInputRef = useRef<HTMLInputElement>(null);
+
+  // Carregar a rotina do dia e detectar automaticamente se é Computador ou Celular
+  useEffect(() => {
+    setDataHoje(new Date().toISOString().split("T")[0]);
+    carregarDadosSincronizados();
+
+    if (typeof window !== "undefined") {
+      const atualizarModoPorLargura = () => {
+        if (window.innerWidth < 768) {
+          setModoTela("mobile");
+        } else {
+          setModoTela("desktop");
+        }
+      };
+      atualizarModoPorLargura();
+      window.addEventListener("resize", atualizarModoPorLargura);
+
+      const params = new URLSearchParams(window.location.search);
+      const b = params.get("bancada");
+      if (b === "urina" || b === "imuno" || b === "coag" || b === "pso") {
+        setBancadaAtiva(b);
       }
-    } catch (err) {
-      console.error(err);
+
+      const handleTrocarBancada = (ev: any) => {
+        const nova = ev.detail;
+        if (nova === "urina" || nova === "imuno" || nova === "coag" || nova === "pso") {
+          setBancadaAtiva(nova);
+        }
+      };
+      window.addEventListener("trocar-bancada", handleTrocarBancada);
+
+      return () => {
+        window.removeEventListener("resize", atualizarModoPorLargura);
+        window.removeEventListener("trocar-bancada", handleTrocarBancada);
+      };
+    }
+  }, []);
+
+  // Sincronização automática a cada 8 segundos para manter Computador e Celular em tempo real
+  useEffect(() => {
+    const timer = setInterval(() => {
+      carregarDadosSincronizados(true);
+    }, 8000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const carregarDadosSincronizados = async (silencioso = false) => {
+    if (!silencioso) setIsSyncing(true);
+    try {
+      const [resRotina, resLaudos] = await Promise.all([
+        fetch("/api/rotina", { cache: "no-store" }),
+        fetch("/api/laudos", { cache: "no-store" }),
+      ]);
+      const dataRotina = await resRotina.json();
+      const dataLaudos = await resLaudos.json();
+
+      let laudosAtuais: LaudoUrina[] = [];
+      if (dataLaudos.ok && Array.isArray(dataLaudos.laudos)) {
+        laudosAtuais = dataLaudos.laudos;
+        setLaudosDia(laudosAtuais);
+      }
+
+      if (dataRotina.ok && Array.isArray(dataRotina.rotina)) {
+        const prontuariosComLaudo = new Set(
+          laudosAtuais.map((l) => formatarProntuario(l.prontuario))
+        );
+        const rotinaAtualizada: ItemRotina[] = dataRotina.rotina
+          .map((item: ItemRotina) => ({
+            ...item,
+            prontuario: formatarProntuario(item.prontuario),
+            tem_laudo: Boolean(
+              item.tem_laudo || prontuariosComLaudo.has(formatarProntuario(item.prontuario))
+            ),
+          }))
+          .sort((a: ItemRotina, b: ItemRotina) =>
+            a.nome_paciente.localeCompare(b.nome_paciente, "pt-BR")
+          );
+        setRotinaDia(rotinaAtualizada);
+      }
+    } catch (e) {
+      console.error("Erro ao sincronizar rotina e laudos:", e);
+    } finally {
+      if (!silencioso) setIsSyncing(false);
     }
   };
 
-  // Carregar exames já concluídos pela bancada para fiscalização ao vivo no PC
-  const carregarLaudosDia = async () => {
-    try {
-      const res = await fetch("/api/laudos-dia");
-      const data = await res.json();
-      if (data.ok && Array.isArray(data.laudos)) {
-        setLaudosDia(data.laudos);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  // Upload e extração direta de arquivo (PDF do Conecta SUS ou Planilha/CSV) no computador
+  // Upload direto do arquivo Conecta SUS (CSV, Excel ou PDF) no Computador
   const handleUploadArquivo = async (file: File) => {
     setIsUploading(true);
     try {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("filtrarApenasRealizado", "true");
+      // Nunca descartar pela coluna "Data coleta"
+      formData.append("filtrarApenasRealizado", "false");
 
       const res = await fetch("/api/extrair-arquivo", {
         method: "POST",
         body: formData,
       });
-
       const data = await res.json();
 
-      if (!data.ok) {
-        showToast(data.error || "Erro ao processar arquivo.", "error");
+      const listaExtraida: ItemRotina[] = data.pacientesUnificados || data.pacientes || [];
+
+      if (!data.ok || listaExtraida.length === 0) {
+        mostrarNotificacao(
+          data.error || "Nenhum exame de bancada (Urina, PSO, Rápidos, Coag) encontrado neste arquivo.",
+          "warning"
+        );
+        setIsUploading(false);
         return;
       }
 
-      const listaPacientes = data.pacientes || data.pacientesUnificados || [];
-
-      if (!listaPacientes || listaPacientes.length === 0) {
-        showToast("Nenhum paciente de bancada encontrado no arquivo.", "warning");
-        return;
+      if (data.dataReferencia) {
+        setDataHoje(data.dataReferencia);
       }
 
-      // Alimenta imediatamente a fila de pacientes na tela
-      setRotinaDia(listaPacientes);
+      setResumoExtracao({
+        totalExamesBancada: data.totalExamesBancada || listaExtraida.length,
+        totalPacientes: listaExtraida.length,
+        totalDescartadosBioquimica: data.totalDescartadosBioquimica || 0,
+      });
 
+      // Salvar na rotina do dia (substituindo a rotina anterior) para disponibilizar no celular
       const saveRes = await fetch("/api/rotina", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itens: listaPacientes }),
+        body: JSON.stringify({
+          itens: listaExtraida,
+          substituir: true,
+        }),
       });
-
       const saveData = await saveRes.json();
 
       if (saveData.ok) {
-        showToast(`${listaPacientes.length} pacientes de bancada carregados e sincronizados com sucesso!`, "success");
+        setRotinaDia(listaExtraida);
+        await carregarDadosSincronizados(true);
+        mostrarNotificacao(
+          `✅ Tiragem gerada! ${data.totalExamesBancada || listaExtraida.length} exames de bancada (${listaExtraida.length} pacientes) prontos e sincronizados com o celular.`,
+          "success"
+        );
       } else {
-        showToast(`${listaPacientes.length} pacientes carregados na bancada (${saveData.message || "modo local"}).`, "warning");
+        mostrarNotificacao("Erro ao salvar a rotina extraída no servidor.", "error");
       }
-      await carregarRotinaDia();
-      await carregarLaudosDia();
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      showToast("Falha de rede ao enviar arquivo: " + (err.message || ""), "error");
+      mostrarNotificacao("Falha ao processar arquivo. Verifique o formato (.csv, .xlsx ou .pdf).", "error");
     } finally {
       setIsUploading(false);
     }
   };
 
-  // Inicialização, detecção de tela e sincronização
-  useEffect(() => {
-    document.title = "Urinálise & Bancada SUS";
-    prontuarioInputRef.current?.focus();
-    setDataHoje(new Date().toISOString().split("T")[0]);
-    carregarRotinaDia();
-    carregarLaudosDia();
-
-    if (typeof window !== "undefined") {
-      // No computador, entra no modo fiscal/arquivos; no celular, na bancada
-      if (window.innerWidth < 768) {
-        setModoTela("mobile");
-      } else {
-        setModoTela("desktop");
-      }
-
-      const b = new URLSearchParams(window.location.search).get("bancada");
-      if (b === "urina" || b === "imuno" || b === "coag" || b === "pso") {
-        setBancadaAtiva(b);
-        setModoTela("mobile");
-      }
-    }
-  }, []);
-
-  // Fila sequencial da bancada ativa (ordem exata da estante física de tubos)
-  const filaBancada = React.useMemo(() => {
-    if (!rotinaDia.length) return [];
-    if (bancadaAtiva === "urina") {
-      const f = rotinaDia.filter((p) => p.tem_urina || (!p.tem_pso && !p.tem_coagulograma && !p.tem_vdrl));
-      return f.length > 0 ? f : rotinaDia;
-    }
-    if (bancadaAtiva === "imuno") {
-      const f = rotinaDia.filter(
-        (p) =>
-          p.tem_vdrl ||
-          p.tem_beta_hcg ||
-          p.tem_proteinuria_rapida ||
-          p.tem_pcr ||
-          p.tem_aslo ||
-          p.tem_fr ||
-          p.tem_vhs
-      );
-      return f.length > 0 ? f : rotinaDia;
-    }
-    if (bancadaAtiva === "coag") {
-      const f = rotinaDia.filter((p) => p.tem_coagulograma);
-      return f.length > 0 ? f : rotinaDia;
-    }
-    if (bancadaAtiva === "pso") {
-      const f = rotinaDia.filter((p) => p.tem_pso);
-      return f.length > 0 ? f : rotinaDia;
-    }
-    return rotinaDia;
-  }, [rotinaDia, bancadaAtiva]);
-
-  // Amostra atual na estante de tubos
-  const indiceAtual = pacienteInfo
-    ? filaBancada.findIndex((p) => p.prontuario === pacienteInfo.prontuario)
-    : -1;
-  const proximoTubo =
-    indiceAtual >= 0 && indiceAtual < filaBancada.length - 1
-      ? filaBancada[indiceAtual + 1]
-      : null;
-
-  // Sugestões de busca rápida por prontuário ou nome
-  const sugestoesBusca = React.useMemo(() => {
-    const q = prontuario.trim().toLowerCase();
-    if (!q || q.length < 2) return [];
-    return rotinaDia
-      .filter(
-        (p) =>
-          p.prontuario.toLowerCase().includes(q) ||
-          p.nome_paciente.toLowerCase().includes(q)
-      )
-      .slice(0, 5);
-  }, [rotinaDia, prontuario]);
-
-  const selecionarPaciente = async (p: RotinaItem) => {
-    setProntuario(p.prontuario);
-    setMostrarSugestoes(false);
-    await buscarPaciente(p.prontuario);
+  // Disparo de Impressão Direta (Tiragem Inicial vs Canhotos Finais)
+  const handleImprimirTiragem = () => {
+    setTipoImpressao("triagem");
+    setTimeout(() => {
+      window.print();
+    }, 150);
   };
 
-  // Fechar toast automaticamente
-  useEffect(() => {
-    if (toastMessage) {
-      const timer = setTimeout(() => setToastMessage(null), 3500);
-      return () => clearTimeout(timer);
-    }
-  }, [toastMessage]);
-
-  const showToast = (text: string, type: "success" | "warning" | "error" = "success") => {
-    setToastMessage({ text, type });
+  const handleImprimirCanhotos = () => {
+    setTipoImpressao("resultados");
+    setTimeout(() => {
+      window.print();
+    }, 150);
   };
 
-  // Buscar paciente na rotina pelo prontuário ou nome
-  const buscarPaciente = async (codProntuario: string) => {
-    if (!codProntuario.trim()) return;
+  const mostrarNotificacao = (
+    message: string,
+    type: "success" | "warning" | "error" = "success"
+  ) => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast((prev) => (prev?.message === message ? null : prev));
+    }, 4500);
+  };
+
+  // Buscar paciente ao digitar Prontuário ou Nome
+  const buscarPaciente = async (codigoProntuario: string) => {
+    const limpo = codigoProntuario.trim();
+    if (!limpo) {
+      setPacienteInfo(null);
+      return;
+    }
 
     setIsSearching(true);
     setMostrarSugestoes(false);
     try {
-      const res = await fetch(`/api/paciente?busca=${encodeURIComponent(codProntuario.trim())}`);
+      const res = await fetch(`/api/rotina?prontuario=${encodeURIComponent(limpo)}`);
       const data = await res.json();
 
-      if (data.ok && data.encontrado) {
-        if (data.paciente) {
-          setPacienteInfo(data.paciente);
-          setNomeManual(data.paciente.nome_paciente);
-
-          const exUpper = (data.paciente.exame || "").toUpperCase();
-          setTemPso(Boolean(data.paciente.tem_pso || exUpper.includes("PSO") || exUpper.includes("SANGUE OCULTO") || exUpper.includes("SOF")));
-          setTemBetaHcg(Boolean(data.paciente.tem_beta_hcg || exUpper.includes("BETA") || exUpper.includes("HCG") || exUpper.includes("TIG")));
-          setTemVhs(Boolean(data.paciente.tem_vhs || exUpper.includes("VHS") || exUpper.includes("HEMOSSEDIMENTA")));
-          setTemVdrl(Boolean(data.paciente.tem_vdrl || exUpper.includes("VDRL") || exUpper.includes("SIFILIS")));
-          setTemProvasInflamatorias(Boolean(data.paciente.tem_pcr || data.paciente.tem_aslo || data.paciente.tem_fr || exUpper.includes("PCR") || exUpper.includes("ASLO") || exUpper.includes("REUMATOIDE") || exUpper.includes("LATEX")));
-          setTemCoagulograma(Boolean(data.paciente.tem_coagulograma || exUpper.includes("COAGULO") || exUpper.includes("TAP") || exUpper.includes("TTPA") || exUpper.includes("INR")));
-          setTemProteinuriaRapida(Boolean(data.paciente.tem_proteinuria_rapida || exUpper.includes("PROTEINURIA") || exUpper.includes("PROT RAP") || exUpper.includes("PRE-ECLAMPSIA")));
-        }
-
-        // Se já tinha laudo prévio ou rascunho salvo, carrega os dados
-        if (data.laudoExistente) {
-          const l: LaudoUrina = data.laudoExistente;
-          if (l.tem_pso || l.resultado_pso) {
-            setTemPso(true);
-            setResultadoPso(l.resultado_pso || "Negativo");
-            setObsPso(l.obs_pso || "");
-          }
-          if (l.tem_beta_hcg || l.resultado_beta_hcg) {
-            setTemBetaHcg(true);
-            setResultadoBetaHcg(l.resultado_beta_hcg || "Negativo");
-          }
-          if (l.tem_vhs || l.resultado_vhs) {
-            setTemVhs(true);
-            setResultadoVhs(l.resultado_vhs || "10 mm/1ª hora");
-          }
-          if (l.tem_vdrl || l.resultado_vdrl) {
-            setTemVdrl(true);
-            setResultadoVdrl(l.resultado_vdrl || "Não Reagente");
-            setVdrlAcumularLote(Boolean(l.vdrl_acumular_lote || l.resultado_vdrl === "Aguardando lote semanal"));
-          }
-          if (l.tem_pcr || l.resultado_pcr || l.resultado_aslo || l.resultado_fr) {
-            setTemProvasInflamatorias(true);
-            setResultadoPcr(l.resultado_pcr || "Negativo (< 6 mg/L)");
-            setResultadoAslo(l.resultado_aslo || "Negativo (< 200 UI/mL)");
-            setResultadoFr(l.resultado_fr || "Negativo (< 8 UI/mL)");
-          }
-          if (l.tem_coagulograma || l.tp_tempo || l.tp_inr) {
-            setTemCoagulograma(true);
-            setCoagTpTempo(l.tp_tempo || "12.0 seg");
-            setCoagTpInr(l.tp_inr || "1.00");
-            setCoagTtpaTempo(l.ttpa_tempo || "31.0 seg");
-            setCoagTtpaRelacao(l.ttpa_relacao || "1.00");
-            setCoagRepetido(Boolean(l.coagulograma_repetido));
-            setCoagTp1(l.coagulograma_tp_1 || "");
-            setCoagTtpa1(l.coagulograma_ttpa_1 || "");
-          }
-          if (l.tem_proteinuria_rapida || l.resultado_proteinuria_rapida) {
-            setTemProteinuriaRapida(true);
-            setResultadoProteinuriaRapida(l.resultado_proteinuria_rapida || "Negativo");
-          }
-          setForm({
-            data_hora: l.data_hora || new Date().toISOString(),
-            volume: l.volume || VALORES_PADRAO_NORMAL.volume || "60 mL",
-            cor: l.cor || VALORES_PADRAO_NORMAL.cor,
-            aspecto: l.aspecto || VALORES_PADRAO_NORMAL.aspecto,
-            densidade: l.densidade || VALORES_PADRAO_NORMAL.densidade,
-            ph: l.ph || VALORES_PADRAO_NORMAL.ph,
-            proteina: l.proteina || VALORES_PADRAO_NORMAL.proteina,
-            glicose: l.glicose || VALORES_PADRAO_NORMAL.glicose,
-            cetona: l.cetona || VALORES_PADRAO_NORMAL.cetona,
-            bilirrubina: l.bilirrubina || VALORES_PADRAO_NORMAL.bilirrubina,
-            urobilinogenio: l.urobilinogenio || VALORES_PADRAO_NORMAL.urobilinogenio,
-            sangue: l.sangue || VALORES_PADRAO_NORMAL.sangue,
-            nitrito: l.nitrito || VALORES_PADRAO_NORMAL.nitrito,
-            leucocitos_fita: l.leucocitos_fita || VALORES_PADRAO_NORMAL.leucocitos_fita,
-            celulas_epiteliais: l.celulas_epiteliais || VALORES_PADRAO_NORMAL.celulas_epiteliais,
-            leucocitos_campo: l.leucocitos_campo || VALORES_PADRAO_NORMAL.leucocitos_campo,
-            hemacias_campo: l.hemacias_campo || VALORES_PADRAO_NORMAL.hemacias_campo,
-            bacterias: l.bacterias || VALORES_PADRAO_NORMAL.bacterias,
-            cristais: l.cristais || VALORES_PADRAO_NORMAL.cristais,
-            cilindros: l.cilindros || VALORES_PADRAO_NORMAL.cilindros,
-            observacoes: l.observacoes || "",
-            status: l.status || "rascunho",
-          });
-          showToast(`Laudo anterior carregado (${l.status})`, "warning");
-        } else {
-          showToast(`Paciente localizado: ${data.paciente.nome_paciente}`, "success");
-        }
+      if (data.ok && data.paciente) {
+        selecionarPaciente(data.paciente, data.ultimoLaudo);
       } else {
         setPacienteInfo(null);
-        showToast("Prontuário não cadastrado na rotina de hoje. Preencha o nome do paciente.", "warning");
+        mostrarNotificacao(
+          `Prontuário #${limpo} não listado na rotina. Preencha o nome manualmente se desejar.`,
+          "warning"
+        );
       }
-    } catch (err) {
-      console.error(err);
-      showToast("Erro ao consultar prontuário no servidor", "error");
+    } catch (error) {
+      console.error("Erro ao buscar prontuário:", error);
     } finally {
       setIsSearching(false);
     }
   };
+
+  // Carrega todos os dados e flags de exames do paciente selecionado
+  const selecionarPaciente = (pac: ItemRotina, laudoExistente?: LaudoUrina | null) => {
+    const prontFormatado = formatarProntuario(pac.prontuario);
+    setProntuario(prontFormatado);
+    setPacienteInfo(pac);
+    setNomeManual(pac.nome_paciente);
+    setIdadeManual(pac.idade_sexo);
+    setPostoManual(pac.posto_unidade);
+    setSolicitanteManual(pac.solicitante);
+    setMostrarSugestoes(false);
+
+    // Verificar se já existe laudo salvo hoje para este paciente
+    const laudoSalvo =
+      laudoExistente ||
+      laudosDia.find((l) => formatarProntuario(l.prontuario) === prontFormatado) ||
+      null;
+
+    // Ativar automaticamente os exames que o paciente tem na rotina
+    setTemPso(Boolean(pac.tem_pso || laudoSalvo?.tem_pso));
+    setTemCoagulograma(Boolean(pac.tem_coagulograma || laudoSalvo?.tp_tempo));
+    setTemVdrl(Boolean(pac.tem_vdrl || laudoSalvo?.resultado_vdrl));
+    setTemBetaHcg(Boolean(pac.tem_beta_hcg || laudoSalvo?.resultado_beta_hcg));
+    setTemVhs(Boolean(pac.tem_vhs || laudoSalvo?.resultado_vhs));
+    setTemProvasInflamatorias(
+      Boolean(
+        pac.tem_pcr ||
+          pac.tem_aslo ||
+          pac.tem_fr ||
+          laudoSalvo?.resultado_pcr ||
+          laudoSalvo?.resultado_aslo ||
+          laudoSalvo?.resultado_fr
+      )
+    );
+    setTemProteinuriaRapida(
+      Boolean(pac.tem_proteinuria_rapida || laudoSalvo?.resultado_proteinuria_rapida)
+    );
+    setTemAboRh(
+      Boolean(pac.tem_abo_rh || laudoSalvo?.tem_abo_rh || laudoSalvo?.resultado_abo_rh)
+    );
+
+    if (laudoSalvo) {
+      setForm({
+        volume: laudoSalvo.volume || VALORES_PADRAO_NORMAL.volume,
+        cor: laudoSalvo.cor || VALORES_PADRAO_NORMAL.cor,
+        aspecto: laudoSalvo.aspecto || VALORES_PADRAO_NORMAL.aspecto,
+        densidade: laudoSalvo.densidade || VALORES_PADRAO_NORMAL.densidade,
+        ph: laudoSalvo.ph || VALORES_PADRAO_NORMAL.ph,
+        proteina: laudoSalvo.proteina || VALORES_PADRAO_NORMAL.proteina,
+        glicose: laudoSalvo.glicose || VALORES_PADRAO_NORMAL.glicose,
+        cetona: laudoSalvo.cetona || VALORES_PADRAO_NORMAL.cetona,
+        bilirrubina: laudoSalvo.bilirrubina || VALORES_PADRAO_NORMAL.bilirrubina,
+        urobilinogenio: laudoSalvo.urobilinogenio || VALORES_PADRAO_NORMAL.urobilinogenio,
+        sangue: laudoSalvo.sangue || VALORES_PADRAO_NORMAL.sangue,
+        nitrito: laudoSalvo.nitrito || VALORES_PADRAO_NORMAL.nitrito,
+        leucocitos_fita: laudoSalvo.leucocitos_fita || VALORES_PADRAO_NORMAL.leucocitos_fita,
+        celulas_epiteliais:
+          laudoSalvo.celulas_epiteliais || VALORES_PADRAO_NORMAL.celulas_epiteliais,
+        leucocitos_campo:
+          laudoSalvo.leucocitos_campo || VALORES_PADRAO_NORMAL.leucocitos_campo,
+        hemacias_campo: laudoSalvo.hemacias_campo || VALORES_PADRAO_NORMAL.hemacias_campo,
+        bacterias: laudoSalvo.bacterias || VALORES_PADRAO_NORMAL.bacterias,
+        muco: laudoSalvo.muco || VALORES_PADRAO_NORMAL.muco,
+        cristais: laudoSalvo.cristais || VALORES_PADRAO_NORMAL.cristais,
+        cilindros: laudoSalvo.cilindros || VALORES_PADRAO_NORMAL.cilindros,
+        outros_elementos:
+          laudoSalvo.outros_elementos || VALORES_PADRAO_NORMAL.outros_elementos,
+        observacoes: laudoSalvo.observacoes || "",
+      });
+      if (laudoSalvo.resultado_pso) setResultadoPso(laudoSalvo.resultado_pso);
+      if (laudoSalvo.obs_pso) setObsPso(laudoSalvo.obs_pso);
+      if (laudoSalvo.resultado_beta_hcg) setResultadoBetaHcg(laudoSalvo.resultado_beta_hcg);
+      if (laudoSalvo.resultado_vhs) setResultadoVhs(laudoSalvo.resultado_vhs);
+      if (laudoSalvo.resultado_abo_rh) setResultadoAboRh(laudoSalvo.resultado_abo_rh);
+      if (laudoSalvo.resultado_vdrl) setResultadoVdrl(laudoSalvo.resultado_vdrl);
+      if (laudoSalvo.resultado_pcr) setResultadoPcr(laudoSalvo.resultado_pcr);
+      if (laudoSalvo.resultado_aslo) setResultadoAslo(laudoSalvo.resultado_aslo);
+      if (laudoSalvo.resultado_fr) setResultadoFr(laudoSalvo.resultado_fr);
+      if (laudoSalvo.tp_tempo) setCoagTpTempo(laudoSalvo.tp_tempo);
+      if (laudoSalvo.tp_inr) setCoagTpInr(laudoSalvo.tp_inr);
+      if (laudoSalvo.ttpa_tempo) setCoagTtpaTempo(laudoSalvo.ttpa_tempo);
+      if (laudoSalvo.ttpa_relacao) setCoagTtpaRelacao(laudoSalvo.ttpa_relacao);
+      if (laudoSalvo.resultado_proteinuria_rapida) {
+        setResultadoProteinuriaRapida(laudoSalvo.resultado_proteinuria_rapida);
+      }
+    } else {
+      setForm({ ...VALORES_PADRAO_NORMAL, observacoes: "" });
+      setResultadoPso("Negativo");
+      setObsPso("");
+      setResultadoBetaHcg("Negativo");
+      setResultadoVhs("10 mm/1ª hora");
+      setResultadoAboRh("O Positivo (+)");
+      setResultadoVdrl("Não Reagente");
+      setVdrlAcumularLote(false);
+      setResultadoPcr("Negativo (< 6 mg/L)");
+      setResultadoAslo("Negativo (< 200 UI/mL)");
+      setResultadoFr("Negativo (< 8 UI/mL)");
+      setCoagTpTempo("12.5 seg");
+      setCoagTpInr("1.00");
+      setCoagTtpaTempo("30.0 seg");
+      setCoagTtpaRelacao("1.00");
+      setCoagRepetido(false);
+      setResultadoProteinuriaRapida("Negativo");
+    }
+  };
+
+  // Filtrar sugestões de autocomplete por prontuário ou nome
+  const sugestoesBusca = React.useMemo(() => {
+    const q = prontuario.trim().toLowerCase();
+    if (!q) return [];
+    return rotinaDia
+      .filter(
+        (r) =>
+          r.prontuario.toLowerCase().includes(q) ||
+          r.nome_paciente.toLowerCase().includes(q)
+      )
+      .slice(0, 8);
+  }, [prontuario, rotinaDia]);
+
+  /**
+   * FILA SEQUENCIAL DE TUBOS DA BANCADA ATIVA (ORDEM ALFABÉTICA EXATA DA TIRAGEM!)
+   * Na Tiragem ("Bancada 15/10"), os pacientes de cada exame estão ordenados de A a Z:
+   * URINA I -> #1 ALICE, #2 ANEZIA, #3 CRISTIANA, #4 MARCELA, #5 MIRIAM, #6 SANDRA.
+   * Aqui filtramos os pacientes do setor ativo mantendo a EXATA ordem alfabética (1, 2, 3, 4, 5, 6...).
+   */
+  const filaBancada = React.useMemo(() => {
+    const ordenada = [...rotinaDia].sort((a, b) =>
+      a.nome_paciente.localeCompare(b.nome_paciente, "pt-BR")
+    );
+    if (bancadaAtiva === "pso") {
+      return ordenada.filter((p) => Boolean(p.tem_pso));
+    }
+    if (bancadaAtiva === "coag") {
+      return ordenada.filter((p) => Boolean(p.tem_coagulograma));
+    }
+    if (bancadaAtiva === "imuno") {
+      return ordenada.filter((p) =>
+        Boolean(
+          p.tem_vdrl ||
+            p.tem_beta_hcg ||
+            p.tem_vhs ||
+            p.tem_pcr ||
+            p.tem_aslo ||
+            p.tem_fr ||
+            p.tem_proteinuria_rapida ||
+            p.tem_abo_rh
+        )
+      );
+    }
+    // Bancada de Urina I: somente quem tem Urina I solicitada, na exata ordem 1, 2, 3, 4, 5, 6 da Tiragem!
+    const apenasUrina = ordenada.filter((p) => Boolean(p.tem_urina));
+    return apenasUrina.length > 0 ? apenasUrina : ordenada;
+  }, [rotinaDia, bancadaAtiva]);
+
+  // Selecionar automaticamente o primeiro tubo pendente quando a fila da bancada mudar no celular
+  useEffect(() => {
+    if (modoTela === "mobile" && filaBancada.length > 0) {
+      const atualNaFila =
+        pacienteInfo &&
+        filaBancada.some(
+          (p) =>
+            formatarProntuario(p.prontuario) === formatarProntuario(pacienteInfo.prontuario)
+        );
+      if (!atualNaFila) {
+        const primeiroPendente = filaBancada.find((p) => !p.tem_laudo) || filaBancada[0];
+        if (primeiroPendente) {
+          selecionarPaciente(primeiroPendente);
+        }
+      }
+    }
+  }, [bancadaAtiva, filaBancada.length, modoTela]);
+
+  // Próximo paciente pendente na estante da bancada ativa
+  const indiceAtual = filaBancada.findIndex(
+    (p) =>
+      formatarProntuario(p.prontuario) ===
+      formatarProntuario(pacienteInfo?.prontuario || prontuario.trim())
+  );
+  const proximoTubo =
+    indiceAtual >= 0 && indiceAtual + 1 < filaBancada.length
+      ? filaBancada[indiceAtual + 1]
+      : filaBancada.find(
+          (p) =>
+            !p.tem_laudo &&
+            formatarProntuario(p.prontuario) !== formatarProntuario(prontuario.trim())
+        );
 
   const handleProntuarioKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
@@ -460,118 +543,18 @@ export default function BancadaPage() {
     }
   };
 
-  const handleProntuarioBlur = () => {
-    if (prontuario.trim() && !pacienteInfo) {
-      buscarPaciente(prontuario);
-    }
-  };
-
-  // Salvar laudo com determinado status
-  const handleSalvar = async (statusEscolhido: StatusLaudo) => {
-    const nomeFinal = pacienteInfo?.nome_paciente || nomeManual.trim();
-
-    if (!prontuario.trim()) {
-      showToast("Digite ou bipe o número do prontuário!", "error");
-      prontuarioInputRef.current?.focus();
-      return;
-    }
-
-    if (!nomeFinal) {
-      showToast("Informe o nome do paciente antes de salvar!", "error");
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      const payload: LaudoUrina = {
-        prontuario: prontuario.trim(),
-        nome_paciente: nomeFinal,
-        idade_sexo: pacienteInfo?.idade_sexo || "",
-        posto_unidade: pacienteInfo?.posto_unidade || "",
-        solicitante: pacienteInfo?.solicitante || "",
-        tem_pso: temPso,
-        resultado_pso: temPso ? resultadoPso : undefined,
-        obs_pso: temPso ? obsPso : undefined,
-        tem_beta_hcg: temBetaHcg,
-        resultado_beta_hcg: temBetaHcg ? resultadoBetaHcg : undefined,
-        tem_vhs: temVhs,
-        resultado_vhs: temVhs ? resultadoVhs : undefined,
-        tem_vdrl: temVdrl,
-        resultado_vdrl: temVdrl ? (vdrlAcumularLote ? "Aguardando lote semanal" : resultadoVdrl) : undefined,
-        tem_abo_rh: temAboRh,
-        resultado_abo_rh: temAboRh ? resultadoAboRh : undefined,
-        vdrl_acumular_lote: temVdrl ? vdrlAcumularLote : undefined,
-        tem_pcr: temProvasInflamatorias,
-        resultado_pcr: temProvasInflamatorias ? resultadoPcr : undefined,
-        tem_aslo: temProvasInflamatorias,
-        resultado_aslo: temProvasInflamatorias ? resultadoAslo : undefined,
-        tem_fr: temProvasInflamatorias,
-        resultado_fr: temProvasInflamatorias ? resultadoFr : undefined,
-        tem_coagulograma: temCoagulograma,
-        tp_tempo: temCoagulograma ? coagTpTempo : undefined,
-        tp_inr: temCoagulograma ? coagTpInr : undefined,
-        ttpa_tempo: temCoagulograma ? coagTtpaTempo : undefined,
-        ttpa_relacao: temCoagulograma ? coagTtpaRelacao : undefined,
-        coagulograma_repetido: temCoagulograma ? coagRepetido : undefined,
-        coagulograma_tp_1: temCoagulograma && coagRepetido ? coagTp1 : undefined,
-        coagulograma_ttpa_1: temCoagulograma && coagRepetido ? coagTtpa1 : undefined,
-        coagulograma_nota_repeticao: temCoagulograma && coagRepetido ? "Exame repetido e confirmado em duplicata técnica nesta mesma amostra." : undefined,
-        tem_proteinuria_rapida: temProteinuriaRapida,
-        resultado_proteinuria_rapida: temProteinuriaRapida ? resultadoProteinuriaRapida : undefined,
-        ...form,
-        data_hora: new Date().toISOString(),
-        status: statusEscolhido,
-      };
-
-      const res = await fetch("/api/salvar-laudo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-
-      if (data.ok) {
-        // Atualiza a rotina local para marcar que este paciente tem laudo
-        setRotinaDia((prev) =>
-          prev.map((p) =>
-            p.prontuario === payload.prontuario ? { ...p, tem_laudo: true } : p
-          )
-        );
-
-        if (statusEscolhido === "finalizado") {
-          if (proximoTubo) {
-            showToast(
-              `Tubo #${indiceAtual + 1} finalizado! Avançando para Tubo #${indiceAtual + 2}: ${proximoTubo.nome_paciente}`,
-              "success"
-            );
-            await selecionarPaciente(proximoTubo);
-            return;
-          } else {
-            showToast(`Amostra ${prontuario} finalizada com sucesso! Toda a bancada foi concluída!`, "success");
-            limparFormulario();
-          }
-        } else if (statusEscolhido === "recoleta") {
-          showToast(`Amostra ${prontuario} sinalizada para RECOLETA!`, "warning");
-          limparFormulario();
-        } else {
-          showToast(`Rascunho de ${prontuario} salvo com sucesso!`, "success");
-        }
-      } else {
-        showToast(`Erro ao salvar: ${data.message || data.error}`, "error");
-      }
-    } catch (err: any) {
-      console.error(err);
-      showToast("Falha de rede ao salvar laudo.", "error");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
+  // Resetar para os valores normais padrão
   const limparFormulario = () => {
     setProntuario("");
     setPacienteInfo(null);
     setNomeManual("");
+    setIdadeManual("");
+    setPostoManual("Conecta SUS");
+    setSolicitanteManual("Conecta SUS");
+    setForm({
+      ...VALORES_PADRAO_NORMAL,
+      observacoes: "",
+    });
     setTemPso(false);
     setResultadoPso("Negativo");
     setObsPso("");
@@ -579,6 +562,8 @@ export default function BancadaPage() {
     setResultadoBetaHcg("Negativo");
     setTemVhs(false);
     setResultadoVhs("10 mm/1ª hora");
+    setTemAboRh(false);
+    setResultadoAboRh("O Positivo (+)");
     setTemVdrl(false);
     setResultadoVdrl("Não Reagente");
     setVdrlAcumularLote(false);
@@ -587,203 +572,257 @@ export default function BancadaPage() {
     setResultadoAslo("Negativo (< 200 UI/mL)");
     setResultadoFr("Negativo (< 8 UI/mL)");
     setTemCoagulograma(false);
-    setCoagTpTempo("12.0 seg");
+    setCoagTpTempo("12.5 seg");
     setCoagTpInr("1.00");
-    setCoagTtpaTempo("31.0 seg");
+    setCoagTtpaTempo("30.0 seg");
     setCoagTtpaRelacao("1.00");
     setCoagRepetido(false);
     setCoagTp1("");
     setCoagTtpa1("");
     setTemProteinuriaRapida(false);
-    setTemAboRh(false);
-    setResultadoAboRh("O Positivo (+)");
     setResultadoProteinuriaRapida("Negativo");
-    setForm({
-      data_hora: "",
-      ...VALORES_PADRAO_NORMAL,
-      observacoes: "",
-      status: "finalizado",
-    });
-    // Auto-focus no prontuário para o próximo paciente
-    setTimeout(() => {
-      prontuarioInputRef.current?.focus();
-    }, 100);
   };
 
+  // Salvar Laudo no Google Sheets / Memória e avançar para o próximo tubo da fila
+  const handleSalvar = async (status: StatusLaudo) => {
+    const prontuarioFinal = formatarProntuario(prontuario);
+    if (!prontuarioFinal) {
+      mostrarNotificacao(
+        "Selecione um tubo da fila ou informe o prontuário antes de salvar!",
+        "error"
+      );
+      prontuarioInputRef.current?.focus();
+      return;
+    }
+
+    if (status === "recoleta" && !form.observacoes.trim()) {
+      mostrarNotificacao(
+        "Para marcar RECOLETA, informe o motivo no campo de Observações.",
+        "warning"
+      );
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const payload: Partial<LaudoUrina> = {
+        prontuario: prontuarioFinal,
+        nome_paciente:
+          pacienteInfo?.nome_paciente || nomeManual.trim() || "PACIENTE AVULSO",
+        idade_sexo: pacienteInfo?.idade_sexo || idadeManual.trim() || "SUS",
+        posto_unidade: pacienteInfo?.posto_unidade || postoManual.trim() || "Conecta SUS",
+        solicitante: pacienteInfo?.solicitante || solicitanteManual.trim() || "Conecta SUS",
+        status,
+        ...form,
+        tem_pso: temPso || bancadaAtiva === "pso",
+        resultado_pso: temPso || bancadaAtiva === "pso" ? resultadoPso : "",
+        obs_pso: temPso || bancadaAtiva === "pso" ? obsPso : "",
+        resultado_beta_hcg: temBetaHcg ? resultadoBetaHcg : "",
+        resultado_vhs: temVhs ? resultadoVhs : "",
+        tem_abo_rh: temAboRh,
+        resultado_abo_rh: temAboRh ? resultadoAboRh : "",
+        resultado_vdrl: temVdrl ? resultadoVdrl : "",
+        resultado_pcr: temProvasInflamatorias ? resultadoPcr : "",
+        resultado_aslo: temProvasInflamatorias ? resultadoAslo : "",
+        resultado_fr: temProvasInflamatorias ? resultadoFr : "",
+        tp_tempo: temCoagulograma || bancadaAtiva === "coag" ? coagTpTempo : "",
+        tp_inr: temCoagulograma || bancadaAtiva === "coag" ? coagTpInr : "",
+        ttpa_tempo: temCoagulograma || bancadaAtiva === "coag" ? coagTtpaTempo : "",
+        ttpa_relacao: temCoagulograma || bancadaAtiva === "coag" ? coagTtpaRelacao : "",
+        resultado_proteinuria_rapida: temProteinuriaRapida ? resultadoProteinuriaRapida : "",
+      };
+
+      const res = await fetch("/api/laudos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (data.ok) {
+        if (data.laudo) {
+          setLaudosDia((prev) => {
+            const idx = prev.findIndex(
+              (l) => formatarProntuario(l.prontuario) === formatarProntuario(data.laudo.prontuario)
+            );
+            if (idx >= 0) {
+              const copia = [...prev];
+              copia[idx] = data.laudo;
+              return copia;
+            }
+            return [data.laudo, ...prev];
+          });
+        }
+
+        setRotinaDia((prev) =>
+          prev.map((r) =>
+            formatarProntuario(r.prontuario) === prontuarioFinal
+              ? { ...r, tem_laudo: true }
+              : r
+          )
+        );
+
+        const msgStatus =
+          status === "finalizado"
+            ? proximoTubo
+              ? `✅ Tubo #${indiceAtual + 1} salvo! Avançando para Tubo #${indiceAtual + 2} (${proximoTubo.nome_paciente.split(" ")[0]})...`
+              : `✅ Amostra #${prontuarioFinal} finalizada e sincronizada!`
+            : status === "rascunho"
+            ? `📝 Rascunho salvo para #${prontuarioFinal}.`
+            : `⚠️ Amostra #${prontuarioFinal} marcada para RECOLETA.`;
+
+        mostrarNotificacao(msgStatus, status === "recoleta" ? "warning" : "success");
+
+        if (status === "finalizado") {
+          if (proximoTubo) {
+            selecionarPaciente(proximoTubo);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          } else {
+            limparFormulario();
+          }
+        }
+      } else {
+        mostrarNotificacao(data.error || "Erro ao gravar resultado.", "error");
+      }
+    } catch (error) {
+      console.error("Erro ao salvar laudo:", error);
+      mostrarNotificacao("Erro de conexão ao salvar resultado.", "error");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Atalho para adicionar frase rápida nas observações
   const aplicarFraseObservacao = (frase: string) => {
     setForm((prev) => ({
       ...prev,
-      observacoes: prev.observacoes ? `${prev.observacoes} ${frase}` : frase,
+      observacoes: prev.observacoes
+        ? `${prev.observacoes.trim()}; ${frase}`
+        : frase,
     }));
   };
 
+  // Filtros e estatísticas do painel Desktop
+  const rotinaFiltradaDesktop = React.useMemo(() => {
+    return rotinaDia.filter((item) => {
+      const q = filtroTexto.trim().toLowerCase();
+      const matchTexto =
+        !q ||
+        item.nome_paciente.toLowerCase().includes(q) ||
+        item.prontuario.toLowerCase().includes(q) ||
+        (item.exame && item.exame.toLowerCase().includes(q));
+
+      const laudoGravado = laudosDia.find(
+        (l) => formatarProntuario(l.prontuario) === formatarProntuario(item.prontuario)
+      );
+      const concluido = Boolean(item.tem_laudo || laudoGravado);
+
+      const matchStatus =
+        filtroStatus === "todos" ||
+        (filtroStatus === "concluidos" && concluido) ||
+        (filtroStatus === "pendentes" && !concluido);
+
+      const matchExame =
+        filtroTipoExame === "todos" ||
+        (filtroTipoExame === "urina" && item.tem_urina) ||
+        (filtroTipoExame === "pso" && item.tem_pso) ||
+        (filtroTipoExame === "abo" && item.tem_abo_rh) ||
+        (filtroTipoExame === "vdrl" &&
+          (item.tem_vdrl ||
+            item.tem_beta_hcg ||
+            item.tem_proteinuria_rapida ||
+            item.tem_pcr ||
+            item.tem_aslo ||
+            item.tem_fr ||
+            item.tem_vhs)) ||
+        (filtroTipoExame === "coag" && item.tem_coagulograma);
+
+      return matchTexto && matchStatus && matchExame;
+    });
+  }, [rotinaDia, laudosDia, filtroTexto, filtroStatus, filtroTipoExame]);
+
+  const totalExamesContagem = React.useMemo(() => {
+    return rotinaDia.reduce((acc, p) => {
+      const qtd = (p.exame || "URINA I").split(/\s*\+\s*|\s*,\s*|\s*;\s*/).filter(Boolean).length;
+      return acc + Math.max(1, qtd);
+    }, 0);
+  }, [rotinaDia]);
+
+  const concluidosCount = rotinaDia.filter(
+    (r) =>
+      r.tem_laudo ||
+      laudosDia.some((l) => formatarProntuario(l.prontuario) === formatarProntuario(r.prontuario))
+  ).length;
+  const pendentesCount = Math.max(0, rotinaDia.length - concluidosCount);
+
   return (
-    <div className="min-h-screen bg-slate-100/70 pb-32">
-      {/* Toast flutuante sutil */}
-      {toastMessage && (
-        <div
-          className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-xl text-sm font-semibold text-white transition-all transform animate-bounce-short ${
-            toastMessage.type === "success"
-              ? "bg-emerald-600 shadow-emerald-500/30"
-              : toastMessage.type === "warning"
-              ? "bg-amber-600 shadow-amber-500/30"
-              : "bg-rose-600 shadow-rose-500/30"
-          }`}
-        >
-          {toastMessage.type === "success" && <Check className="w-5 h-5" />}
-          {toastMessage.type === "warning" && <AlertTriangle className="w-5 h-5" />}
-          {toastMessage.type === "error" && <AlertTriangle className="w-5 h-5" />}
-          <span>{toastMessage.text}</span>
+    <div className="min-h-screen bg-slate-100/80 pb-28 md:pb-12">
+      {/* NOTIFICAÇÃO FLUTUANTE (TOAST) */}
+      {toast && (
+        <div className="fixed top-16 right-3 left-3 sm:left-auto z-50 max-w-md animate-in fade-in slide-in-from-top-4 duration-200 print:hidden">
+          <div
+            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl shadow-lg border text-xs sm:text-sm font-semibold ${
+              toast.type === "success"
+                ? "bg-emerald-950 text-emerald-50 border-emerald-700"
+                : toast.type === "warning"
+                ? "bg-amber-950 text-amber-50 border-amber-700"
+                : "bg-rose-950 text-rose-50 border-rose-700"
+            }`}
+          >
+            {toast.type === "success" && (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            )}
+            {toast.type === "warning" && (
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            )}
+            {toast.type === "error" && (
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            )}
+            <span>{toast.message}</span>
+          </div>
         </div>
       )}
 
-      {/* SELETOR DE MODO E BARRA SUPERIOR DESKTOP */}
-      <div className="bg-white border-b border-slate-200 sticky top-16 z-30 print:hidden shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-          {/* Alternador de Modo */}
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
-            <button
-              type="button"
-              onClick={() => setModoTela("desktop")}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
-                modoTela === "desktop"
-                  ? "bg-slate-900 text-white shadow-sm"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
-              }`}
-            >
-              <Monitor className="w-4 h-4 text-sky-400" />
-              <span>🖥️ Computador (Painel & Impressão)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setModoTela("mobile")}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
-                modoTela === "mobile"
-                  ? "bg-sky-700 text-white shadow-sm"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
-              }`}
-            >
-              <Smartphone className="w-4 h-4 text-amber-300" />
-              <span>📱 Bancada (Digitação com Luvas)</span>
-            </button>
-          </div>
-
-          {/* Botões Rápidos e Sincronização */}
-          <div className="flex items-center gap-2 self-end sm:self-auto">
-            <button
-              type="button"
-              onClick={() => {
-                carregarRotinaDia();
-                carregarLaudosDia();
-                showToast("Dados atualizados da bancada!", "success");
-              }}
-              className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl shadow-2xs transition flex items-center gap-1.5"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Atualizar</span>
-            </button>
-
-            {/* Atalho direto de impressão da tiragem */}
-            <button
-              type="button"
-              onClick={handleImprimirTiragem}
-              disabled={rotinaDia.length === 0}
-              className="px-3.5 py-1.5 bg-sky-700 hover:bg-sky-800 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5"
-              title="Imprimir folha de tiragem da bancada agora"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Imprimir Tiragem ({rotinaDia.length})</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
+      {/* ============================================================== */}
+      {/* MODO COMPUTADOR (DESKTOP): EXCLUSIVO PARA TIRAGEM & IMPRESSÃO  */}
+      {/* (Sem formulário de contagem no computador!)                    */}
+      {/* ============================================================== */}
       {modoTela === "desktop" ? (
-        /* ============================================================== */
-        /* PAINEL DO COMPUTADOR: DESIGN CLÍNICO, LIMPO E PROFISSIONAL     */
-        /* ============================================================== */
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-24 print:hidden space-y-6">
-
-          {/* 1. CABEÇALHO INSTITUCIONAL & KPIS DO DIA */}
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-slate-100 pb-5">
-              <div>
-                <div className="flex items-center gap-2.5">
-                  <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-                    Painel de Bancada & Gestão da Rotina
-                  </h1>
-                  <span className="bg-sky-50 text-sky-800 border border-sky-200 text-[11px] font-black px-2.5 py-0.5 rounded-full">
-                    SUS • Caconde
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-5 space-y-6 print:hidden">
+          {/* 1. CENTRAL DE TIRAGEM DO DIA E IMPRESSÃO */}
+          <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+              {/* Esquerda: Título e Status da Sincronização com o Celular */}
+              <div className="space-y-2 max-w-xl">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
+                  <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+                  Modo Produção Ativo • Computador (Tiragem & Impressão)
+                </div>
+                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                  Tiragem Automática do Conecta SUS & Relatórios do Dia
+                </h1>
+                <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                  Suba o arquivo bruto de coletas do <b>Conecta SUS</b>. O sistema descarta automaticamente os bioquímicos, unifica os exames de bancada no formato oficial da <b>Tiragem do Dia</b> (com a Urina 1, 2, 3, 4, 5, 6... em ordem alfabética) e envia a mesma fila para o <b>celular</b> realizar as contagens.
+                </p>
+                <div className="pt-1 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => carregarDadosSincronizados(false)}
+                    disabled={isSyncing}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin text-sky-600" : ""}`} />
+                    <span>{isSyncing ? "Sincronizando com o Celular..." : "Sincronizar Agora"}</span>
+                  </button>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    Atualização automática a cada 8s
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
-                  Gerencie a rotina diária do laboratório municipal. Imprima a <b>folha de tiragem</b> para a preparação dos tubos e, ao término, os <b>canhotos recortáveis</b> para grampear nas requisições.
-                </p>
               </div>
 
-              {/* KPIS / Indicadores em Tempo Real */}
-              <div className="grid grid-cols-3 gap-3">
-                {/* Total */}
-                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 text-center min-w-[110px]">
-                  <div className="text-2xl font-black text-slate-900">{rotinaDia.length}</div>
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mt-0.5">
-                    Pacientes
-                  </div>
-                  <div className="text-[10px] font-mono text-slate-400 mt-0.5">
-                    {totalExamesContagem} exames
-                  </div>
-                </div>
-
-                {/* Concluídas */}
-                <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-3.5 text-center min-w-[110px]">
-                  <div className="text-2xl font-black text-emerald-800">{concluidosCount}</div>
-                  <div className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider mt-0.5">
-                    Concluídos
-                  </div>
-                  <div className="text-[10px] font-bold text-emerald-600 mt-0.5">
-                    {Math.round((concluidosCount / (rotinaDia.length || 1)) * 100)}% da rotina
-                  </div>
-                </div>
-
-                {/* Pendentes */}
-                <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-3.5 text-center min-w-[110px]">
-                  <div className="text-2xl font-black text-amber-800">{pendentesCount}</div>
-                  <div className="text-[10px] font-bold text-amber-700 uppercase tracking-wider mt-0.5">
-                    Pendentes
-                  </div>
-                  <div className="text-[10px] font-bold text-amber-600 mt-0.5">
-                    Na bancada
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* SEÇÃO NOBRE: CENTRAL DE IMPRESSÃO (DESTAQUE TOTAL) */}
-            <div className="mt-6">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-sky-100 text-sky-800 flex items-center justify-center">
-                    <Printer className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-black uppercase tracking-wider text-slate-900">
-                      Central de Impressão de Relatórios
-                    </h2>
-                    <p className="text-[11px] text-slate-500">
-                      Selecione qual relatório você deseja imprimir agora
-                    </p>
-                  </div>
-                </div>
-                <div className="text-xs font-mono text-slate-500">
-                  Data: <b>{new Date().toLocaleDateString("pt-BR")}</b>
-                </div>
-              </div>
-
-              {/* CARDS DAS DUAS IMPRESSÕES */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                {/* CARD 1: FOLHA DE TIRAGEM DO DIA (INÍCIO DO PLANTÃO) */}
+              {/* Direita: DOIS CARDS DE IMPRESSÃO (1. TIRAGEM | 2. CANHOTOS FINAIS) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1 max-w-2xl">
+                {/* CARD 1: FOLHA DE TIRAGEM DA BANCADA (INÍCIO DO DIA) */}
                 <div className="relative overflow-hidden rounded-2xl border-2 border-sky-400/80 bg-gradient-to-br from-sky-50/60 via-white to-sky-50/30 p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
                   <div className="absolute top-0 right-0 bg-sky-600 text-white text-[9.5px] font-black uppercase px-3 py-1 rounded-bl-xl tracking-wider">
                     Início do Plantão
@@ -791,26 +830,26 @@ export default function BancadaPage() {
                   <div>
                     <div className="flex items-center gap-2.5 mb-2">
                       <div className="w-9 h-9 rounded-xl bg-sky-600 text-white flex items-center justify-center shadow-md shadow-sky-600/30">
-                        <ListOrdered className="w-5 h-5" />
+                        <FileSpreadsheet className="w-5 h-5" />
                       </div>
                       <div>
                         <h3 className="text-base font-black text-slate-900">
-                          1. Folha de Tiragem da Bancada
+                          1. Tiragem do Dia (Bancada)
                         </h3>
                         <p className="text-[11px] font-bold text-sky-700">
-                          Estilo Planilha: Exame | Paciente | Prontuário | Resultado
+                          Nº | Exame | Paciente | Prontuário | Resultado
                         </p>
                       </div>
                     </div>
 
                     <p className="text-xs text-slate-600 mb-4 leading-relaxed">
-                      Gera a tabela completa organizada por exame (Urina, ABO/Rh, VDRL, PSO, Coagulograma) para prender na <b>prancheta de trabalho</b>, conferir os tubos nas estantes e anotar resultados à caneta.
+                      Imprime a folha de tiragem igual à planilha de bancada, agrupada por exame e em ordem alfabética (Urina #1, #2, #3, #4, #5, #6...), na exata sequência em que aparece no celular.
                     </p>
                   </div>
 
                   <div className="space-y-2 pt-3 border-t border-sky-200/80">
                     <div className="flex items-center justify-between text-xs text-slate-600">
-                      <span>Total de exames a realizar:</span>
+                      <span>Total na tiragem de hoje:</span>
                       <span className="font-bold font-mono text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
                         {totalExamesContagem} exames ({rotinaDia.length} pacientes)
                       </span>
@@ -853,7 +892,7 @@ export default function BancadaPage() {
                       </div>
                       <div>
                         <h3 className="text-base font-black text-slate-900">
-                          2. Canhotos de Resultados Finais
+                          2. Relatório / Canhotos Finais
                         </h3>
                         <p className="text-[11px] font-bold text-emerald-700">
                           Tiras Recortáveis (9 a 12 por Folha A4)
@@ -862,7 +901,7 @@ export default function BancadaPage() {
                     </div>
 
                     <p className="text-xs text-slate-600 mb-2 leading-relaxed">
-                      Gera as tiras prontas para recortar e colar nas requisições do SUS, com todos os parâmetros: <b>VOL, COR, ASP, PH, DENS, H, L, C, B, CRISTAIS e ABO/Rh</b>.
+                      Imprime os resultados lançados pelo celular com todos os parâmetros: <b>VOL, COR, ASP, PH, DENS, H, L, C, B, CRISTAIS, Rápidos e ABO/Rh</b>.
                     </p>
 
                     {/* Seletor de Formato do Relatório Final */}
@@ -906,7 +945,7 @@ export default function BancadaPage() {
 
                   <div className="space-y-2 pt-3 border-t border-emerald-200/80">
                     <div className="flex items-center justify-between text-xs text-slate-600">
-                      <span>Laudos finalizados:</span>
+                      <span>Contagens pelo celular:</span>
                       <span className="font-bold font-mono text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200">
                         {concluidosCount} de {rotinaDia.length} concluídos
                       </span>
@@ -920,7 +959,7 @@ export default function BancadaPage() {
                         className="flex-1 py-3 px-4 bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 disabled:opacity-40 text-white font-black text-xs sm:text-sm rounded-xl shadow-md shadow-emerald-700/20 transition flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
                       >
                         <Printer className="w-4 h-4" />
-                        <span>Imprimir Canhotos Finais</span>
+                        <span>Imprimir Relatório Final</span>
                       </button>
 
                       <button
@@ -936,37 +975,45 @@ export default function BancadaPage() {
                     </div>
                   </div>
                 </div>
-
               </div>
             </div>
 
-            {/* SEÇÃO DE SUBIR ARQUIVOS (PDF OU PLANILHA CONECTA SUS) */}
+            {/* SEÇÃO DE SUBIR ARQUIVO BRUTO DO CONECTA SUS */}
             <div className="mt-6 p-5 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="flex items-center gap-3.5">
                 <div className="w-11 h-11 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0 border border-sky-200">
                   <UploadCloud className="w-6 h-6" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
-                    Subir Novo Arquivo de Coletas do Dia (Conecta SUS)
+                  <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2 flex-wrap">
+                    Subir Arquivo Bruto de Coletas (Conecta SUS)
                     {rotinaDia.length > 0 && (
-                      <span className="text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.2 rounded-full">
-                        Ativa ({rotinaDia.length} pacientes)
+                      <span className="text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full">
+                        Rotina Ativa ({rotinaDia.length} pacientes / {totalExamesContagem} exames)
+                      </span>
+                    )}
+                    {resumoExtracao && (
+                      <span className="text-[10.5px] font-bold text-sky-800 bg-sky-100 px-2.5 py-0.5 rounded-full">
+                        {resumoExtracao.totalDescartadosBioquimica} bioquímicos removidos automaticamente
                       </span>
                     )}
                   </h4>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Aceita o PDF diário ou Planilha Excel (.xlsx/.csv). O sistema filtra automaticamente Urina EAS, PSO, ABO/Rh, VDRL, Beta-HCG e Coagulograma.
+                    Aceita Planilha (.csv, .xlsx, .xls) ou PDF do Conecta SUS. Retira automaticamente os bioquímicos, unifica os exames de bancada e organiza a Urina I (1, 2, 3, 4, 5, 6...) em ordem alfabética.
                   </p>
                 </div>
               </div>
 
               <label className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer transition active:scale-95 shrink-0">
                 <FileSpreadsheet className="w-4 h-4 text-sky-400" />
-                <span>{isUploading ? "Processando Arquivo..." : "Selecionar Arquivo (PDF ou Excel)"}</span>
+                <span>
+                  {isUploading
+                    ? "Extraindo Exames de Bancada..."
+                    : "Selecionar Arquivo Conecta SUS (.CSV / .XLSX / .PDF)"}
+                </span>
                 <input
                   type="file"
-                  accept=".pdf,.xlsx,.xls,.csv"
+                  accept=".csv,.xlsx,.xls,.pdf"
                   disabled={isUploading}
                   onChange={(e) => {
                     const f = e.target.files?.[0];
@@ -979,20 +1026,19 @@ export default function BancadaPage() {
             </div>
           </div>
 
-          {/* 2. TABELA DE ACOMPANHAMENTO AO VIVO & LANÇAMENTO DE EXAMES */}
+          {/* 2. TABELA DE ACOMPANHAMENTO AO VIVO (SOMENTE LEITURA E CONFERÊNCIA NO COMPUTADOR) */}
           <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-            {/* Topbar da Tabela com Filtros e Pesquisa */}
             <div className="p-5 border-b border-slate-200 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h2 className="font-black text-base text-slate-900 tracking-tight flex items-center gap-2">
-                    Acompanhamento da Rotina & Lançamento de Resultados
+                    Relação da Tiragem do Dia & Resultados Recebidos do Celular
                     <span className="text-xs font-mono font-bold bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full">
-                      {rotinaFiltradaDesktop.length} exibidos
+                      {rotinaFiltradaDesktop.length} pacientes
                     </span>
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Resultados lançados pelo celular ou computador aparecem ao vivo para conferência e impressão.
+                    A contagem (Positivo/Negativo e Sedimentoscopia) é feita exclusivamente pelo <b>celular</b>. Os resultados aparecem aqui automaticamente para impressão.
                   </p>
                 </div>
 
@@ -1018,7 +1064,7 @@ export default function BancadaPage() {
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
-                    Pendentes ({pendentesCount})
+                    Aguardando Celular ({pendentesCount})
                   </button>
                   <button
                     type="button"
@@ -1036,14 +1082,13 @@ export default function BancadaPage() {
 
               {/* Linha de Busca e Filtro por Tipo de Exame */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-                {/* Campo de Busca */}
                 <div className="relative flex-1 max-w-md">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={filtroTexto}
                     onChange={(e) => setFiltroTexto(e.target.value)}
-                    placeholder="Buscar por paciente ou prontuário..."
+                    placeholder="Buscar por paciente, prontuário ou exame..."
                     className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition"
                   />
                   {filtroTexto && (
@@ -1057,15 +1102,14 @@ export default function BancadaPage() {
                   )}
                 </div>
 
-                {/* Filtro por Tipo de Exame */}
                 <div className="flex items-center gap-1.5 overflow-x-auto text-[11px] font-semibold scrollbar-none">
-                  <span className="text-slate-400 text-[10px] uppercase font-bold shrink-0">Filtrar:</span>
+                  <span className="text-slate-400 text-[10px] uppercase font-bold shrink-0">Setor:</span>
                   {[
                     { id: "todos", label: "Todos" },
-                    { id: "urina", label: "🧪 Urina EAS" },
+                    { id: "urina", label: "🧪 Urina I" },
+                    { id: "vdrl", label: "🔬 Rápidos / Imuno" },
                     { id: "abo", label: "🩸 ABO/Rh" },
-                    { id: "pso", label: "💩 PSO" },
-                    { id: "vdrl", label: "🔬 VDRL" },
+                    { id: "pso", label: "💩 Sangue Oculto" },
                     { id: "coag", label: "⏱️ Coagulograma" },
                   ].map((cat) => (
                     <button
@@ -1089,11 +1133,15 @@ export default function BancadaPage() {
             {rotinaFiltradaDesktop.length === 0 ? (
               <div className="p-16 text-center text-slate-400">
                 <FileSpreadsheet className="w-12 h-12 mx-auto mb-3 opacity-30 text-slate-400" />
-                <p className="font-bold text-sm text-slate-700">Nenhum paciente encontrado</p>
+                <p className="font-bold text-sm text-slate-700">
+                  {rotinaDia.length === 0
+                    ? "Nenhuma tiragem carregada no momento"
+                    : "Nenhum paciente corresponde ao filtro selecionado"}
+                </p>
                 <p className="text-xs mt-1 text-slate-400">
                   {rotinaDia.length === 0
-                    ? "Suba o arquivo PDF ou planilha do dia para carregar a rotina."
-                    : "Nenhum paciente corresponde aos filtros aplicados."}
+                    ? "Clique no botão 'Selecionar Arquivo Conecta SUS' acima para gerar a tiragem do dia automaticamente."
+                    : "Altere os filtros acima para visualizar todos os pacientes."}
                 </p>
               </div>
             ) : (
@@ -1101,110 +1149,177 @@ export default function BancadaPage() {
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-slate-50 text-slate-600 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
-                      <th className="py-3 px-3.5 text-center w-14">Tubo</th>
-                      <th className="py-3 px-3.5 text-center w-24">Prontuário</th>
-                      <th className="py-3 px-3.5">Paciente & Unidade</th>
-                      <th className="py-3 px-3.5">Exames Solicitados</th>
-                      <th className="py-3 px-3.5 text-center w-28">Status</th>
-                      <th className="py-3 px-3.5">Resultados Lançados</th>
-                      <th className="py-3 px-3.5 text-right w-36">Ação</th>
+                      <th className="py-3 px-3.5 text-center w-16">Ordem</th>
+                      <th className="py-3 px-3.5 text-center w-28">Prontuário</th>
+                      <th className="py-3 px-3.5">Paciente</th>
+                      <th className="py-3 px-3.5">Exames de Bancada</th>
+                      <th className="py-3 px-3.5 text-center w-36">Status no Celular</th>
+                      <th className="py-3 px-3.5">Resultados Sincronizados</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {rotinaFiltradaDesktop.map((item, idx) => {
                       const laudoGravado = laudosDia.find(
-                        (l) => l.prontuario === item.prontuario
+                        (l) =>
+                          formatarProntuario(l.prontuario) === formatarProntuario(item.prontuario)
                       );
                       const isConcluido = item.tem_laudo || Boolean(laudoGravado);
                       return (
-                        <tr key={item.prontuario + idx} className="hover:bg-slate-50/80 transition group">
-                          {/* Número do Tubo */}
+                        <tr key={item.prontuario + idx} className="hover:bg-slate-50/80 transition">
                           <td className="py-3 px-3.5 text-center">
                             <span className="font-black font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md text-[11px]">
                               #{idx + 1}
                             </span>
                           </td>
 
-                          {/* Prontuário */}
                           <td className="py-3 px-3.5 text-center font-mono font-bold text-sky-800">
-                            {item.prontuario}
+                            {formatarProntuario(item.prontuario)}
                           </td>
 
-                          {/* Paciente e Unidade */}
                           <td className="py-3 px-3.5">
-                            <div className="font-bold text-slate-900 group-hover:text-sky-900 transition">
+                            <div className="font-bold text-slate-900 uppercase">
                               {item.nome_paciente}
                             </div>
-                            <div className="text-[10.5px] text-slate-500 font-normal mt-0.5">
-                              {item.idade_sexo || "Idade N/D"} • {item.posto_unidade || "Geral"}
-                            </div>
                           </td>
 
-                          {/* Exames */}
                           <td className="py-3 px-3.5">
                             <div className="flex flex-wrap gap-1">
                               {item.tem_urina && (
-                                <span className="bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold px-1.5 py-0.2 rounded">
-                                  Urina EAS
+                                <span className="bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold px-2 py-0.5 rounded">
+                                  URINA I
                                 </span>
                               )}
-                              {item.tem_abo_rh && (
-                                <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold px-1.5 py-0.2 rounded">
-                                  ABO/Rh
-                                </span>
-                              )}
-                              {item.tem_vdrl && (
-                                <span className="bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold px-1.5 py-0.2 rounded">
-                                  VDRL
+                              {item.tem_proteinuria_rapida && (
+                                <span className="bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold px-2 py-0.5 rounded">
+                                  PROTEINÚRIA - TESTE RÁPIDO
                                 </span>
                               )}
                               {item.tem_pso && (
-                                <span className="bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold px-1.5 py-0.2 rounded">
-                                  PSO
+                                <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold px-2 py-0.5 rounded">
+                                  SANGUE OCULTO NAS FEZES
+                                </span>
+                              )}
+                              {item.tem_abo_rh && (
+                                <span className="bg-red-50 text-red-700 border border-red-200 text-[10px] font-bold px-2 py-0.5 rounded">
+                                  ABO / FATOR RH
+                                </span>
+                              )}
+                              {item.tem_vdrl && (
+                                <span className="bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold px-2 py-0.5 rounded">
+                                  VDRL
+                                </span>
+                              )}
+                              {item.tem_beta_hcg && (
+                                <span className="bg-pink-50 text-pink-700 border border-pink-200 text-[10px] font-bold px-2 py-0.5 rounded">
+                                  BETA-HCG
+                                </span>
+                              )}
+                              {item.tem_pcr && (
+                                <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded">
+                                  PCR
+                                </span>
+                              )}
+                              {item.tem_aslo && (
+                                <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded">
+                                  ASLO
+                                </span>
+                              )}
+                              {item.tem_fr && (
+                                <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded">
+                                  FR
+                                </span>
+                              )}
+                              {item.tem_vhs && (
+                                <span className="bg-teal-50 text-teal-700 border border-teal-200 text-[10px] font-bold px-2 py-0.5 rounded">
+                                  VHS
                                 </span>
                               )}
                               {item.tem_coagulograma && (
-                                <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-1.5 py-0.2 rounded">
-                                  Coagulograma
+                                <span className="bg-slate-100 text-slate-800 border border-slate-300 text-[10px] font-bold px-2 py-0.5 rounded">
+                                  COAGULOGRAMA / TAP
                                 </span>
                               )}
-                              {!item.tem_urina && !item.tem_abo_rh && !item.tem_vdrl && !item.tem_pso && !item.tem_coagulograma && (
-                                <span className="text-slate-600 text-[11px] font-medium">
-                                  {item.exame || "Urina I"}
-                                </span>
-                              )}
+                              {!item.tem_urina &&
+                                !item.tem_proteinuria_rapida &&
+                                !item.tem_pso &&
+                                !item.tem_abo_rh &&
+                                !item.tem_vdrl &&
+                                !item.tem_beta_hcg &&
+                                !item.tem_pcr &&
+                                !item.tem_aslo &&
+                                !item.tem_fr &&
+                                !item.tem_vhs &&
+                                !item.tem_coagulograma && (
+                                  <span className="text-slate-700 text-[11px] font-semibold">
+                                    {item.exame || "URINA I"}
+                                  </span>
+                                )}
                             </div>
                           </td>
 
-                          {/* Status */}
                           <td className="py-3 px-3.5 text-center">
                             {isConcluido ? (
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                <Check className="w-3.5 h-3.5 text-emerald-600" /> Concluído
+                                <Check className="w-3.5 h-3.5 text-emerald-600" /> Concluído no Celular
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                                <Clock className="w-3.5 h-3.5 text-amber-600" /> Pendente
+                                <Smartphone className="w-3.5 h-3.5 text-amber-600" /> Contagem pelo Celular
                               </span>
                             )}
                           </td>
 
-                          {/* Resultados Lançados */}
                           <td className="py-3 px-3.5 text-slate-800 font-mono text-[11px]">
                             {laudoGravado ? (
                               <div className="space-y-0.5">
-                                <div className="text-slate-900">
-                                  <span className="font-bold text-sky-800">EAS:</span>{" "}
-                                  VOL: {laudoGravado.volume || "60mL"} | D: {laudoGravado.densidade || "1.020"} | pH: {laudoGravado.ph || "6.0"} | Leu: {laudoGravado.leucocitos_campo || "4.000/mL"} | Hem: {laudoGravado.hemacias_campo || "1.000/mL"}
-                                </div>
-                                {(laudoGravado.resultado_abo_rh || laudoGravado.resultado_pso || laudoGravado.resultado_vdrl || laudoGravado.tp_tempo) && (
-                                  <div className="text-[10.5px] text-slate-600 font-medium">
+                                {item.tem_urina && (
+                                  <div className="text-slate-900">
+                                    <span className="font-bold text-sky-800">URINA I:</span>{" "}
+                                    VOL: {laudoGravado.volume || "60 mL"} | D: {laudoGravado.densidade} | pH: {laudoGravado.ph} | Leu: {laudoGravado.leucocitos_campo} | Hem: {laudoGravado.hemacias_campo}
+                                  </div>
+                                )}
+                                {(laudoGravado.resultado_proteinuria_rapida ||
+                                  laudoGravado.resultado_pso ||
+                                  laudoGravado.resultado_abo_rh ||
+                                  laudoGravado.resultado_vdrl ||
+                                  laudoGravado.resultado_beta_hcg ||
+                                  laudoGravado.resultado_pcr ||
+                                  laudoGravado.resultado_aslo ||
+                                  laudoGravado.resultado_fr ||
+                                  laudoGravado.resultado_vhs ||
+                                  laudoGravado.tp_tempo) && (
+                                  <div className="text-[10.5px] text-slate-700 font-semibold">
                                     {[
-                                      laudoGravado.resultado_abo_rh ? `ABO/Rh: ${laudoGravado.resultado_abo_rh}` : null,
-                                      laudoGravado.resultado_pso ? `PSO: ${laudoGravado.resultado_pso}` : null,
-                                      laudoGravado.resultado_vdrl ? `VDRL: ${laudoGravado.resultado_vdrl}` : null,
-                                      laudoGravado.resultado_beta_hcg ? `Beta: ${laudoGravado.resultado_beta_hcg}` : null,
-                                      laudoGravado.tp_tempo ? `TP: ${laudoGravado.tp_tempo}` : null,
+                                      laudoGravado.resultado_proteinuria_rapida
+                                        ? `Proteinúria Rápida: ${laudoGravado.resultado_proteinuria_rapida}`
+                                        : null,
+                                      laudoGravado.resultado_pso
+                                        ? `PSO: ${laudoGravado.resultado_pso}`
+                                        : null,
+                                      laudoGravado.resultado_abo_rh
+                                        ? `ABO/Rh: ${laudoGravado.resultado_abo_rh}`
+                                        : null,
+                                      laudoGravado.resultado_vdrl
+                                        ? `VDRL: ${laudoGravado.resultado_vdrl}`
+                                        : null,
+                                      laudoGravado.resultado_beta_hcg
+                                        ? `Beta-HCG: ${laudoGravado.resultado_beta_hcg}`
+                                        : null,
+                                      laudoGravado.resultado_pcr
+                                        ? `PCR: ${laudoGravado.resultado_pcr}`
+                                        : null,
+                                      laudoGravado.resultado_aslo
+                                        ? `ASLO: ${laudoGravado.resultado_aslo}`
+                                        : null,
+                                      laudoGravado.resultado_fr
+                                        ? `FR: ${laudoGravado.resultado_fr}`
+                                        : null,
+                                      laudoGravado.resultado_vhs
+                                        ? `VHS: ${laudoGravado.resultado_vhs}`
+                                        : null,
+                                      laudoGravado.tp_tempo
+                                        ? `TAP/TP: ${laudoGravado.tp_tempo} (INR ${laudoGravado.tp_inr})`
+                                        : null,
                                     ]
                                       .filter(Boolean)
                                       .join(" • ")}
@@ -1212,28 +1327,10 @@ export default function BancadaPage() {
                                 )}
                               </div>
                             ) : (
-                              <span className="text-slate-400 italic text-[11px]">
-                                Aguardando lançamento na bancada
+                              <span className="text-slate-400 italic text-[11px] flex items-center gap-1">
+                                <Clock className="w-3 h-3" /> Aguardando contagem pelo celular na bancada
                               </span>
                             )}
-                          </td>
-
-                          {/* Botão de Ação Direta */}
-                          <td className="py-3 px-3.5 text-right">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                selecionarPaciente(item);
-                                setModoTela("mobile");
-                              }}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ml-auto active:scale-95 cursor-pointer ${
-                                isConcluido
-                                  ? "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300"
-                                  : "bg-sky-700 hover:bg-sky-800 text-white shadow-xs"
-                              }`}
-                            >
-                              <span>{isConcluido ? "Editar ✎" : "Lançar no PC ➔"}</span>
-                            </button>
                           </td>
                         </tr>
                       );
@@ -1243,1040 +1340,776 @@ export default function BancadaPage() {
               </div>
             )}
           </div>
-
         </div>
       ) : (
         /* ============================================================== */
-        /* MODO CELULAR / DIGITAÇÃO DE BANCADA COM LUVAS                  */
+        /* MODO CELULAR (MOBILE): EXCLUSIVO PARA CONTAGEM DE BANCADA      */
+        /* Layout compacto otimizado para telas pequenas                  */
         /* ============================================================== */
-        <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-4 sm:pt-6">
-          {/* Banner de Retorno para o Painel Desktop */}
-          <div className="hidden md:flex items-center justify-between bg-slate-900 text-white px-5 py-3 rounded-2xl mb-4 shadow-md border border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold">
-                💻
-              </div>
-              <div>
-                <div className="text-xs font-bold text-white flex items-center gap-2">
-                  <span>Modo Lançamento de Bancada</span>
-                  {pacienteInfo && (
-                    <span className="bg-sky-900/80 text-sky-300 font-mono text-[11px] px-2 py-0.5 rounded border border-sky-700">
-                      Pront: {pacienteInfo.prontuario} • {pacienteInfo.nome_paciente}
-                    </span>
-                  )}
-                </div>
-                <p className="text-[11px] text-slate-400">
-                  Preencha os exames com o teclado físico e clique em Salvar para atualizar a rotina.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setModoTela("desktop")}
-              className="px-4 py-2 bg-white/10 hover:bg-white/20 active:bg-white/30 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 border border-white/10 active:scale-95 cursor-pointer"
-            >
-              <Monitor className="w-4 h-4" />
-              <span>Voltar para o Painel & Impressão</span>
-            </button>
-          </div>
-/* MODO CELULAR: BANCADA OPERACIONAL COM LUVAS */
-        <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-4 sm:pt-6">
-        {/* SELEÇÃO RÁPIDA DE BANCADA (TABS DE TOQUE RÁPIDO) */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-          {[
-            { id: "urina", label: "🧪 Urinálise (EAS)", desc: "Fita & Sedimento" },
-            { id: "imuno", label: "🔬 Imuno / Rápidos", desc: "VDRL, Beta, VHS" },
-            { id: "coag", label: "⏱️ Coagulograma", desc: "TP/INR, TTPA" },
-            { id: "pso", label: "💩 Sangue Oculto", desc: "Fezes / PSO" },
-          ].map((b) => (
-            <button
-              key={b.id}
-              type="button"
-              onClick={() => {
-                setBancadaAtiva(b.id as any);
-                if (b.id === "coag") setTemCoagulograma(true);
-                if (b.id === "pso") setTemPso(true);
-                if (b.id === "imuno") {
-                  setTemVdrl(true);
-                  setTemBetaHcg(true);
-                }
-              }}
-              className={`p-2.5 rounded-xl border text-left transition-all active:scale-95 ${
-                bancadaAtiva === b.id
-                  ? "bg-sky-700 text-white border-sky-700 shadow-md shadow-sky-700/20"
-                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 shadow-xs"
-              }`}
-            >
-              <div className="font-bold text-xs sm:text-sm">{b.label}</div>
-              <div className={`text-[10.5px] ${bancadaAtiva === b.id ? "text-sky-200" : "text-slate-500"}`}>
-                {b.desc}
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {/* ESTANTE SEQUENCIAL DE TUBOS DA BANCADA (CARROSSEL COM ORDEM EXATA DOS TUBOS) */}
-        {filaBancada.length > 0 && (
-          <div className="mb-4 bg-white rounded-2xl border border-slate-200 shadow-xs p-3">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                <ListOrdered className="w-4 h-4 text-sky-600" />
-                <span>Estante de Tubos ({filaBancada.length} amostras na fila)</span>
-              </div>
-              <span className="text-[11px] text-slate-500 font-medium">
-                Toque no tubo para carregar
-              </span>
-            </div>
-            <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-thin">
-              {filaBancada.map((item, idx) => {
-                const isAtivo = pacienteInfo?.prontuario === item.prontuario;
-                return (
-                  <button
-                    key={item.prontuario + idx}
-                    type="button"
-                    onClick={() => selecionarPaciente(item)}
-                    className={`shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all active:scale-95 ${
-                      isAtivo
-                        ? "bg-sky-600 text-white border-sky-600 shadow-md shadow-sky-600/20"
-                        : item.tem_laudo
-                        ? "bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100"
-                        : "bg-slate-50 text-slate-800 border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    <div
-                      className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black ${
-                        isAtivo
-                          ? "bg-white/20 text-white"
-                          : item.tem_laudo
-                          ? "bg-emerald-600 text-white"
-                          : "bg-slate-200 text-slate-700"
-                      }`}
-                    >
-                      #{idx + 1}
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold truncate max-w-[120px]">
-                        {item.nome_paciente.split(" ")[0]} {item.nome_paciente.split(" ")[1] || ""}
-                      </div>
-                      <div className={`text-[10px] ${isAtivo ? "text-sky-100" : "text-slate-500"}`}>
-                        Pront: {item.prontuario}
-                      </div>
-                    </div>
-                    {item.tem_laudo && !isAtivo && (
-                      <Check className="w-3.5 h-3.5 text-emerald-600 ml-1" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* CABEÇALHO DO PRONTUÁRIO / BUSCA DUAL (PRONTUÁRIO OU NOME COM AUTOCOMPLETE) */}
-        <section className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 sm:p-5 mb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-              <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
-                {bancadaAtiva === "urina" && "Bancada de Urinálise (EAS)"}
-                {bancadaAtiva === "imuno" && "Bancada de Imunologia & Rápidos (VDRL, Beta, VHS)"}
-                {bancadaAtiva === "coag" && "Bancada de Coagulograma (TP/INR & TTPA)"}
-                {bancadaAtiva === "pso" && "Bancada de Pesquisa de Sangue Oculto (PSO)"}
-              </h1>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={limparFormulario}
-                className="text-xs text-slate-500 hover:text-slate-800 font-medium flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition"
-                title="Limpar formulário"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Limpar Campos
-              </button>
-            </div>
-          </div>
-
-          {/* INPUT GIGANTE DE BUSCA DUAL COM AUTOCOMPLETE */}
-          <div className="mt-4 relative">
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              Identificação do Tubo (Prontuário ou Nome do Paciente)
-            </label>
-            <div className="relative flex items-center">
-              <div className="absolute left-3.5 text-slate-400">
-                <Scan className="w-6 h-6" />
-              </div>
-              <input
-                ref={prontuarioInputRef}
-                type="text"
-                value={prontuario}
-                onChange={(e) => {
-                  setProntuario(e.target.value);
-                  setMostrarSugestoes(true);
-                }}
-                onFocus={() => setMostrarSugestoes(true)}
-                onKeyDown={handleProntuarioKeyDown}
-                onBlur={handleProntuarioBlur}
-                placeholder="Bipe o código de barras, digite o prontuário ou nome..."
-                className="w-full pl-12 pr-28 py-3.5 text-lg sm:text-xl font-bold font-mono text-slate-900 bg-slate-50 border-2 border-slate-300 rounded-xl focus:border-sky-600 focus:bg-white focus:outline-none transition-all shadow-inner"
-              />
-              <button
-                type="button"
-                onClick={() => buscarPaciente(prontuario)}
-                disabled={isSearching || !prontuario.trim()}
-                className="absolute right-2 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5"
-              >
-                <Search className="w-3.5 h-3.5" />
-                {isSearching ? "Buscando..." : "Localizar"}
-              </button>
-            </div>
-
-            {/* DROPDOWN DE AUTOCOMPLETE COM RESULTADOS DA ROTINA */}
-            {mostrarSugestoes && sugestoesBusca.length > 0 && (
-              <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-300 rounded-xl shadow-xl z-30 overflow-hidden">
-                <div className="p-1.5 bg-slate-50 border-b border-slate-200 text-[10.5px] font-bold text-slate-500 uppercase flex items-center justify-between">
-                  <span>Pacientes encontrados na rotina de hoje</span>
-                  <span>{sugestoesBusca.length} sugestões</span>
-                </div>
-                <div className="max-h-60 overflow-y-auto divide-y divide-slate-100">
-                  {sugestoesBusca.map((sug) => (
-                    <button
-                      key={sug.prontuario}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        selecionarPaciente(sug);
-                      }}
-                      className="w-full px-3.5 py-2.5 text-left hover:bg-sky-50 flex items-center justify-between transition-colors group"
-                    >
-                      <div>
-                        <div className="font-bold text-xs text-slate-900 group-hover:text-sky-800">
-                          {sug.nome_paciente}
-                        </div>
-                        <div className="text-[11px] text-slate-500 font-mono">
-                          Prontuário: {sug.prontuario} • {sug.posto_unidade}
-                        </div>
-                      </div>
-                      <span className="text-[11px] font-bold text-sky-700 bg-sky-100 group-hover:bg-sky-200 px-2.5 py-1 rounded-lg flex items-center gap-1">
-                        Carregar <ArrowRight className="w-3 h-3" />
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* DADOS DO PACIENTE IDENTIFICADO */}
-          {pacienteInfo ? (
-            <div className="mt-3.5 p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-emerald-950">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                  <UserCheck className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-black text-sm sm:text-base">
-                      {pacienteInfo.nome_paciente}
-                    </span>
-                    {pacienteInfo.tem_laudo && (
-                      <span className="text-[10px] bg-emerald-200 text-emerald-900 font-bold px-1.5 py-0.5 rounded">
-                        Já Laudado
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-emerald-800">
-                    {pacienteInfo.idade_sexo} • {pacienteInfo.posto_unidade} • {pacienteInfo.solicitante}
-                  </p>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className="text-[11px] font-mono font-bold text-emerald-900 bg-emerald-100 px-2 py-1 rounded">
-                  {pacienteInfo.exame}
-                </span>
-              </div>
-            </div>
-          ) : (
-            <div className="mt-3">
-              <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
-                Nome do Paciente (Caso não conste na rotina importada)
-              </label>
-              <input
-                type="text"
-                value={nomeManual}
-                onChange={(e) => setNomeManual(e.target.value)}
-                placeholder="Ex: Maria José da Silva"
-                className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-800 focus:border-sky-500 focus:outline-none"
-              />
-            </div>
-          )}
-        </section>
-
-        {/* SEÇÃO 1: EXAME FÍSICO-QUÍMICO (BOTÕES GRANDES DE TOQUE RÁPIDO) */}
-        <section className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 sm:p-5 mb-4">
-          <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
-            <h2 className="text-sm font-black text-slate-800 uppercase tracking-wide flex items-center gap-2">
-              <span className="w-6 h-6 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center text-xs font-bold">
-                1
-              </span>
-              Exame Físico e Químico (Fita Reativa)
-            </h2>
-            <span className="text-[11px] text-slate-500 font-medium">
-              Valores normais pré-selecionados
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* VOLUME (VOL) */}
-            <QuickChipSelect
-              label="Volume da Amostra (VOL)"
-              sublabel="Ref: Frasco / mL"
-              value={form.volume || "60 mL"}
-              onChange={(val) => setForm({ ...form, volume: val })}
-              options={[
-                { label: "40 mL", value: "40 mL" },
-                { label: "50 mL", value: "50 mL" },
-                { label: "60 mL (Padrão)", value: "60 mL" },
-                { label: "70 mL", value: "70 mL" },
-                { label: "80 mL", value: "80 mL" },
-                { label: "100 mL", value: "100 mL" },
-                { label: "Frasco", value: "Frasco" },
-              ]}
-              allowCustom
-            />
-            {/* COR */}
-            <QuickChipSelect
-              label="Cor da Amostra"
-              sublabel="Visual"
-              value={form.cor}
-              onChange={(val) => setForm({ ...form, cor: val })}
-              options={[
-                { label: "Amarelo Claro", value: "Amarelo claro" },
-                { label: "Amarelo Citrino (Normal)", value: "Amarelo citrino" },
-                { label: "Amarelo Ouro / Escuro", value: "Amarelo escuro", isAbnormal: true },
-                { label: "Âmbar", value: "Âmbar", isAbnormal: true },
-                { label: "Avermelhado / Hemático", value: "Avermelhado", isAbnormal: true },
-              ]}
-            />
-
-            {/* ASPECTO */}
-            <QuickChipSelect
-              label="Aspecto"
-              sublabel="Transparência"
-              value={form.aspecto}
-              onChange={(val) => setForm({ ...form, aspecto: val })}
-              options={[
-                { label: "Límpido (Normal)", value: "Límpido" },
-                { label: "Ligeiramente Turvo", value: "Ligeiramente turvo", isAbnormal: true },
-                { label: "Turvo", value: "Turvo", isAbnormal: true },
-              ]}
-            />
-
-            {/* DENSIDADE */}
-            <QuickChipSelect
-              label="Densidade"
-              sublabel="Ref: 1.015 - 1.025"
-              value={form.densidade}
-              onChange={(val) => setForm({ ...form, densidade: val })}
-              options={[
-                { label: "1.005", value: "1.005", isAbnormal: true },
-                { label: "1.010", value: "1.010" },
-                { label: "1.015", value: "1.015" },
-                { label: "1.020", value: "1.020" },
-                { label: "1.025", value: "1.025" },
-                { label: "1.030", value: "1.030", isAbnormal: true },
-              ]}
-            />
-
-            {/* pH */}
-            <QuickChipSelect
-              label="pH Urinário"
-              sublabel="Ref: 5.0 - 7.0"
-              value={form.ph}
-              onChange={(val) => setForm({ ...form, ph: val })}
-              options={[
-                { label: "5.0", value: "5.0" },
-                { label: "5.5", value: "5.5" },
-                { label: "6.0", value: "6.0" },
-                { label: "6.5", value: "6.5" },
-                { label: "7.0", value: "7.0" },
-                { label: "7.5", value: "7.5", isAbnormal: true },
-                { label: "8.0", value: "8.0", isAbnormal: true },
-              ]}
-            />
-
-            {/* PROTEÍNA */}
-            <QuickChipSelect
-              label="Proteínas (Proteinúria)"
-              value={form.proteina}
-              onChange={(val) => setForm({ ...form, proteina: val })}
-              options={[
-                { label: "Negativo", value: "Negativo" },
-                { label: "Traços", value: "Traços", isAbnormal: true },
-                { label: "(+)", value: "(+)", isAbnormal: true },
-                { label: "(++)", value: "(++)", isAbnormal: true },
-                { label: "(+++)", value: "(+++)", isAbnormal: true },
-              ]}
-            />
-
-            {/* GLICOSE */}
-            <QuickChipSelect
-              label="Glicose (Glicosúria)"
-              value={form.glicose}
-              onChange={(val) => setForm({ ...form, glicose: val })}
-              options={[
-                { label: "Negativo", value: "Negativo" },
-                { label: "(+)", value: "(+)", isAbnormal: true },
-                { label: "(++)", value: "(++)", isAbnormal: true },
-                { label: "(+++)", value: "(+++)", isAbnormal: true },
-                { label: "(++++)", value: "(++++)", isAbnormal: true },
-              ]}
-            />
-
-            {/* SANGUE / HEMOGLOBINA */}
-            <QuickChipSelect
-              label="Sangue / Hemoglobina"
-              value={form.sangue}
-              onChange={(val) => setForm({ ...form, sangue: val })}
-              options={[
-                { label: "Negativo", value: "Negativo" },
-                { label: "Traços", value: "Traços", isAbnormal: true },
-                { label: "(+)", value: "(+)", isAbnormal: true },
-                { label: "(++)", value: "(++)", isAbnormal: true },
-                { label: "(+++)", value: "(+++)", isAbnormal: true },
-              ]}
-            />
-
-            {/* NITRITO */}
-            <QuickChipSelect
-              label="Nitrito (Bacteriúria)"
-              value={form.nitrito}
-              onChange={(val) => setForm({ ...form, nitrito: val })}
-              options={[
-                { label: "Negativo", value: "Negativo" },
-                { label: "Positivo", value: "Positivo", isAbnormal: true },
-              ]}
-            />
-
-            {/* LEUCÓCITOS DA FITA */}
-            <QuickChipSelect
-              label="Leucócitos (Esterase da Fita)"
-              value={form.leucocitos_fita}
-              onChange={(val) => setForm({ ...form, leucocitos_fita: val })}
-              options={[
-                { label: "Negativo", value: "Negativo" },
-                { label: "Traços", value: "Traços", isAbnormal: true },
-                { label: "(+)", value: "(+)", isAbnormal: true },
-                { label: "(++)", value: "(++)", isAbnormal: true },
-                { label: "(+++)", value: "(+++)", isAbnormal: true },
-              ]}
-            />
-
-            {/* CORPOS CETÔNICOS */}
-            <QuickChipSelect
-              label="Corpos Cetônicos"
-              value={form.cetona}
-              onChange={(val) => setForm({ ...form, cetona: val })}
-              options={[
-                { label: "Negativo", value: "Negativo" },
-                { label: "Traços", value: "Traços", isAbnormal: true },
-                { label: "Positivo (+)", value: "Positivo", isAbnormal: true },
-              ]}
-            />
-
-            {/* BILIRRUBINA */}
-            <QuickChipSelect
-              label="Bilirrubina"
-              value={form.bilirrubina}
-              onChange={(val) => setForm({ ...form, bilirrubina: val })}
-              options={[
-                { label: "Negativo", value: "Negativo" },
-                { label: "Positivo (+)", value: "Positivo", isAbnormal: true },
-              ]}
-            />
-
-            {/* UROBILINOGÊNIO */}
-            <QuickChipSelect
-              label="Urobilinogênio"
-              value={form.urobilinogenio}
-              onChange={(val) => setForm({ ...form, urobilinogenio: val })}
-              options={[
-                { label: "Normal", value: "Normal" },
-                { label: "Aumentado", value: "Aumentado", isAbnormal: true },
-              ]}
-            />
-          </div>
-        </section>
-
-        {/* SEÇÃO 2: SEDIMENTOSCOPIA / MICROSCOPIA ÓPTICA */}
-        <section className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 sm:p-5 mb-4">
-          <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
-            <h2 className="text-sm font-black text-slate-800 uppercase tracking-wide flex items-center gap-2">
-              <span className="w-6 h-6 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center text-xs font-bold">
-                2
-              </span>
-              Sedimentoscopia (Microscopia de Bancada)
-            </h2>
-            <span className="text-[11px] text-slate-500 font-medium">
-              Campos de 400x
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* LEUCÓCITOS (EM MILHAR /ML) */}
-            <QuickChipSelect
-              label="Leucócitos (L)"
-              sublabel="Unidade em mil /mL (Ex: 8 = 8.000 /mL)"
-              value={form.leucocitos_campo}
-              onChange={(val) => setForm({ ...form, leucocitos_campo: val })}
-              allowCustom
-              options={[
-                { label: "1.000 /mL", value: "1.000 /mL" },
-                { label: "4.000 /mL", value: "4.000 /mL" },
-                { label: "8.000 /mL", value: "8.000 /mL" },
-                { label: "10.000 /mL", value: "10.000 /mL", isAbnormal: true },
-                { label: "14.000 /mL", value: "14.000 /mL", isAbnormal: true },
-                { label: "25.000 /mL", value: "25.000 /mL", isAbnormal: true },
-                { label: "> 100.000 /mL", value: "> 100.000 /mL", isAbnormal: true },
-              ]}
-            />
-
-            {/* HEMÁCIAS (EM MILHAR /ML) */}
-            <QuickChipSelect
-              label="Hemácias (H)"
-              sublabel="Unidade em mil /mL (Ex: 10 = 10.000 /mL)"
-              value={form.hemacias_campo}
-              onChange={(val) => setForm({ ...form, hemacias_campo: val })}
-              allowCustom
-              options={[
-                { label: "1.000 /mL", value: "1.000 /mL" },
-                { label: "2.000 /mL", value: "2.000 /mL" },
-                { label: "5.000 /mL", value: "5.000 /mL" },
-                { label: "10.000 /mL", value: "10.000 /mL", isAbnormal: true },
-                { label: "14.000 /mL", value: "14.000 /mL", isAbnormal: true },
-                { label: "20.000 /mL", value: "20.000 /mL", isAbnormal: true },
-                { label: "> 50.000 /mL", value: "> 50.000 /mL", isAbnormal: true },
-              ]}
-            />
-
-            {/* CÉLULAS EPITELIAIS (C) */}
-            <QuickChipSelect
-              label="Células Epiteliais (C)"
-              sublabel="Unidade em mil /mL (Ex: 6 = 6.000 /mL)"
-              value={form.celulas_epiteliais}
-              onChange={(val) => setForm({ ...form, celulas_epiteliais: val })}
-              allowCustom
-              options={[
-                { label: "1.000 /mL", value: "1.000 /mL" },
-                { label: "4.000 /mL", value: "4.000 /mL" },
-                { label: "6.000 /mL", value: "6.000 /mL" },
-                { label: "10.000 /mL", value: "10.000 /mL" },
-                { label: "20.000 /mL", value: "20.000 /mL", isAbnormal: true },
-                { label: "25.000 /mL", value: "25.000 /mL", isAbnormal: true },
-              ]}
-            />
-
-            {/* FLORA BACTERIANA (B) */}
-            <QuickChipSelect
-              label="Flora Bacteriana (B)"
-              value={form.bacterias}
-              onChange={(val) => setForm({ ...form, bacterias: val })}
-              options={[
-                { label: "Ausentes", value: "Ausentes" },
-                { label: "fb (Habitual)", value: "fb" },
-                { label: "F.B.A (Aumentada)", value: "F.B.A", isAbnormal: true },
-                { label: "Abundante", value: "Abundante", isAbnormal: true },
-              ]}
-            />
-
-            {/* CRISTAIS */}
-            <div className="space-y-1.5">
-              <QuickChipSelect
-                label="Cristais"
-                sublabel={
-                  parseFloat(form.ph) >= 7.0
-                    ? `pH ${form.ph} (Alcalino) ➔ Favorável a Fosfatos`
-                    : `pH ${form.ph} (Ácido) ➔ Favorável a Oxalato / Uratos`
-                }
-                value={form.cristais}
-                onChange={(val) => setForm({ ...form, cristais: val })}
-                options={[
-                  { label: "Ausentes", value: "Ausentes" },
-                  { label: "Oxalato de Cálcio", value: "Oxalato de cálcio", isAbnormal: true },
-                  { label: "Urato Amorfo", value: "Urato amorfo", isAbnormal: true },
-                  { label: "Fosfato Amorfo", value: "Fosfato amorfo", isAbnormal: true },
-                  { label: "Fosfato Triplo", value: "Fosfato triplo", isAbnormal: true },
-                  { label: "Ácido Úrico", value: "Ácido úrico", isAbnormal: true },
-                  { label: "Carbonato de Cálcio", value: "Carbonato de cálcio", isAbnormal: true },
-                  { label: "Cistina", value: "Cistina", isAbnormal: true },
-                ]}
-              />
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="text"
-                  value={form.cristais}
-                  onChange={(e) => setForm({ ...form, cristais: e.target.value })}
-                  placeholder="Texto livre / quantificação (ex: Oxalato de cálcio ++ ou Raros uratos)"
-                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:border-teal-600 focus:bg-white text-slate-800"
-                />
-              </div>
-            </div>
-
-            {/* CILINDROS */}
-            <QuickChipSelect
-              label="Cilindros Urinários"
-              value={form.cilindros}
-              onChange={(val) => setForm({ ...form, cilindros: val })}
-              options={[
-                { label: "Ausentes", value: "Ausentes" },
-                { label: "Hialinos", value: "Hialinos", isAbnormal: true },
-                { label: "Granulosos", value: "Granulosos", isAbnormal: true },
-                { label: "Leucocitários", value: "Leucocitários", isAbnormal: true },
-                { label: "Hemáticos", value: "Hemáticos", isAbnormal: true },
-              ]}
-            />
-
-            {/* VALIDAÇÃO CLÍNICA INTELIGENTE DE BANCADA: pH vs. CRISTAIS */}
-            {(() => {
-              const phNum = parseFloat(form.ph) || 6.0;
-              const ehAlcalino = phNum >= 7.0;
-              const ehAcido = phNum <= 6.0;
-              const cristaisNorm = form.cristais.toLowerCase();
-
-              // Urina Alcalina com Urato ou Ácido Úrico
-              if (ehAlcalino && (cristaisNorm.includes("urato") || cristaisNorm.includes("ácido úrico") || cristaisNorm.includes("acido urico"))) {
-                return (
-                  <div className="sm:col-span-2 p-3.5 bg-amber-50 border-2 border-amber-300 rounded-xl text-xs text-amber-950 flex items-start gap-3 shadow-sm animate-pulse-once">
-                    <Sparkles className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                    <div className="space-y-1.5 flex-1">
-                      <span className="font-black text-amber-900 block uppercase tracking-wide">
-                        💡 Alerta Clínico da Bancada: Incompatibilidade de pH vs. Cristais
-                      </span>
-                      <p className="leading-relaxed">
-                        Amostra com <strong>pH alcalino ({form.ph})</strong>. Cristais de <em>Urato Amorfo</em> e <em>Ácido Úrico</em> precipitam tipicamente em urinas ácidas (pH &lt; 6.0). Em urinas alcalinas, o cristal amorfo esperado é <strong>Fosfato Amorfo</strong> ou <strong>Fosfato Triplo (Estruvita)</strong>.
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => setForm({ ...form, cristais: "Fosfato amorfo" })}
-                          className="inline-flex items-center gap-1 text-xs font-bold text-amber-950 bg-amber-200 hover:bg-amber-300 px-3 py-1.5 rounded-lg transition active:scale-95 shadow-xs"
-                        >
-                          ➔ Corrigir para Fosfato Amorfo
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setForm({ ...form, cristais: "Fosfato triplo" })}
-                          className="inline-flex items-center gap-1 text-xs font-bold text-amber-950 bg-amber-200 hover:bg-amber-300 px-3 py-1.5 rounded-lg transition active:scale-95 shadow-xs"
-                        >
-                          ➔ Corrigir para Fosfato Triplo
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-
-              // Urina Ácida com Fosfatos
-              if (ehAcido && (cristaisNorm.includes("fosfato amorfo") || cristaisNorm.includes("fosfato triplo"))) {
-                return (
-                  <div className="sm:col-span-2 p-3.5 bg-amber-50 border-2 border-amber-300 rounded-xl text-xs text-amber-950 flex items-start gap-3 shadow-sm animate-pulse-once">
-                    <Sparkles className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                    <div className="space-y-1.5 flex-1">
-                      <span className="font-black text-amber-900 block uppercase tracking-wide">
-                        💡 Alerta Clínico da Bancada: Incompatibilidade de pH vs. Cristais
-                      </span>
-                      <p className="leading-relaxed">
-                        Amostra com <strong>pH ácido ({form.ph})</strong>. Fosfatos amorfos e triplos precipitam habitualmente em urinas alcalinas (pH ≥ 7.0). Em urinas ácidas, a precipitação comum esperada é de <strong>Urato Amorfo</strong> ou <strong>Oxalato de Cálcio</strong>.
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => setForm({ ...form, cristais: "Urato amorfo" })}
-                          className="inline-flex items-center gap-1 text-xs font-bold text-amber-950 bg-amber-200 hover:bg-amber-300 px-3 py-1.5 rounded-lg transition active:scale-95 shadow-xs"
-                        >
-                          ➔ Corrigir para Urato Amorfo
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setForm({ ...form, cristais: "Oxalato de cálcio" })}
-                          className="inline-flex items-center gap-1 text-xs font-bold text-amber-950 bg-amber-200 hover:bg-amber-300 px-3 py-1.5 rounded-lg transition active:scale-95 shadow-xs"
-                        >
-                          ➔ Corrigir para Oxalato de Cálcio
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-
-              return null;
-            })()}
-          </div>
-        </section>
-
-        {/* SEÇÃO 3: OBSERVAÇÕES E MOTIVO DE RECOLETA */}
-        <section className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 sm:p-5 mb-4">
-          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
-            <h2 className="text-sm font-black text-slate-800 uppercase tracking-wide flex items-center gap-2">
-              <span className="w-6 h-6 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center text-xs font-bold">
-                3
-              </span>
-              Observações Clínicas & Motivo de Recoleta
-            </h2>
-          </div>
-
-          {/* Botões rápidos de observações frequentes em laboratório */}
-          <div className="mb-3 flex flex-wrap gap-1.5">
+        <div className="max-w-lg mx-auto px-2.5 pt-2.5 pb-8 print:hidden">
+          {/* ABAS DE SETOR COMPACTAS PARA TELAS PEQUENAS */}
+          <div className="grid grid-cols-4 gap-1.5 mb-2.5">
             {[
-              "Sedimento dentro da normalidade.",
-              "Amostra insuficiente (< 5 mL).",
-              "Amostra com moderado muco.",
-              "Presença de filamentos de muco.",
-              "Paciente em período menstrual relatado.",
-              "Frasco inadequado sem identificação.",
-            ].map((frase) => (
+              { id: "urina", label: "🧪 Urina I", sub: "1, 2, 3..." },
+              { id: "imuno", label: "🔬 Rápidos", sub: "Pos / Neg" },
+              { id: "coag", label: "⏱️ Coag", sub: "TAP / INR" },
+              { id: "pso", label: "💩 PSO", sub: "Fezes" },
+            ].map((b) => (
               <button
-                key={frase}
+                key={b.id}
                 type="button"
-                onClick={() => aplicarFraseObservacao(frase)}
-                className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-200 transition active:scale-95"
+                onClick={() => {
+                  setBancadaAtiva(b.id as any);
+                  if (b.id === "coag") setTemCoagulograma(true);
+                  if (b.id === "pso") setTemPso(true);
+                }}
+                className={`py-2 px-1.5 rounded-xl border text-center transition-all active:scale-95 ${
+                  bancadaAtiva === b.id
+                    ? "bg-sky-700 text-white border-sky-700 shadow-sm"
+                    : "bg-white text-slate-700 border-slate-200"
+                }`}
               >
-                + {frase}
+                <div className="font-black text-[11px] leading-tight truncate">{b.label}</div>
+                <div
+                  className={`text-[9.5px] leading-tight mt-0.5 truncate ${
+                    bancadaAtiva === b.id ? "text-sky-100" : "text-slate-400"
+                  }`}
+                >
+                  {b.sub}
+                </div>
               </button>
             ))}
           </div>
 
-          <textarea
-            rows={2}
-            value={form.observacoes}
-            onChange={(e) => setForm({ ...form, observacoes: e.target.value })}
-            placeholder="Digite observações técnicas ou o motivo de recoleta (ex: volume insuficiente, urina com precipitado amorfos, etc.)..."
-            className="w-full p-3 text-sm text-slate-800 bg-slate-50 border border-slate-300 rounded-xl focus:border-sky-500 focus:bg-white focus:outline-none transition"
-          />
-        </section>
-
-        {/* SEÇÃO 4: PESQUISA DE SANGUE OCULTO (PSO) NA BANCADA */}
-        <section
-          className={`rounded-2xl border transition-all p-4 sm:p-5 mb-4 shadow-sm ${
-            temPso
-              ? "bg-white border-rose-300 ring-2 ring-rose-400/20"
-              : "bg-slate-50 border-slate-200"
-          }`}
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 mb-4 border-b border-slate-200">
-            <div className="flex items-center gap-2">
-              <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold ${
-                temPso ? "bg-rose-100 text-rose-700" : "bg-slate-200 text-slate-600"
-              }`}>
-                4
-              </span>
-              <div>
-                <h2 className="text-sm font-black text-slate-900 uppercase tracking-wide flex items-center gap-2">
-                  Pesquisa de Sangue Oculto (PSO - Fezes)
-                  {temPso && (
-                    <span className="text-[10px] bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full font-bold">
-                      Exame Solicitado
-                    </span>
-                  )}
-                </h2>
-                <p className="text-[11px] text-slate-500 font-medium">
-                  Triagem rápida de bancada manual junto à urinálise
-                </p>
+          {/* ESTANTE SEQUENCIAL DE TUBOS (NA EXATA ORDEM 1, 2, 3, 4, 5, 6 DA TIRAGEM!) */}
+          <div className="mb-2.5 bg-white rounded-2xl border border-slate-200 shadow-2xs p-2.5">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-1.5 text-[11px] font-black text-slate-800">
+                <ListOrdered className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                <span>
+                  Ordem da Tiragem ({filaBancada.length}{" "}
+                  {bancadaAtiva === "urina" ? " na Urina I" : " na fila"})
+                </span>
               </div>
+              <button
+                type="button"
+                onClick={() => carregarDadosSincronizados(false)}
+                className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-lg border border-sky-200 flex items-center gap-1 active:scale-95"
+              >
+                <RefreshCw className={`w-3 h-3 ${isSyncing ? "animate-spin" : ""}`} />
+                Atualizar
+              </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setTemPso(!temPso)}
-              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 ${
-                temPso
-                  ? "bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-100"
-                  : "bg-white text-slate-600 border border-slate-300 hover:bg-slate-100"
-              }`}
-            >
-              {temPso ? "✓ PSO Ativo no Laudo" : "+ Ativar Sangue Oculto (PSO)"}
-            </button>
-          </div>
-
-          {temPso ? (
-            <div className="space-y-4">
-              <QuickChipSelect
-                label="Resultado da Pesquisa de Sangue Oculto"
-                sublabel="Método: Imunocromatográfico / Guáiaco"
-                value={resultadoPso}
-                onChange={(val) => setResultadoPso(val)}
-                options={[
-                  { label: "Negativo (Ausência de Sangue)", value: "Negativo" },
-                  { label: "Positivo (+)", value: "Positivo", isAbnormal: true },
-                  { label: "Traços / Duvidoso", value: "Traços", isAbnormal: true },
-                  { label: "Amostra Inadequada / Recoleta", value: "Amostra Inadequada / Recoleta", isAbnormal: true },
-                ]}
-              />
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1.5">
-                  Observações do PSO (Restrição Alimentar / Amostra)
-                </label>
-                <div className="mb-2 flex flex-wrap gap-1.5">
-                  {[
-                    "Sem restrição dietética prévia relatada.",
-                    "Paciente informou preparo e dieta realizados.",
-                    "Presença de hemorroida referida.",
-                    "Amostra diarreica / volume escasso.",
-                  ].map((obs) => (
+            {filaBancada.length === 0 ? (
+              <div className="text-center py-3 text-xs text-slate-500 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                Nenhum paciente nesta fila. Suba o arquivo do dia pelo computador ou digite abaixo.
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                {filaBancada.map((item, idx) => {
+                  const isAtivo =
+                    formatarProntuario(pacienteInfo?.prontuario) ===
+                    formatarProntuario(item.prontuario);
+                  return (
                     <button
-                      key={obs}
+                      key={item.prontuario + idx}
                       type="button"
-                      onClick={() => setObsPso(obsPso ? `${obsPso} ${obs}` : obs)}
-                      className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded-lg border border-slate-200 transition"
+                      onClick={() => selecionarPaciente(item)}
+                      className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-left transition-all active:scale-95 ${
+                        isAtivo
+                          ? "bg-sky-700 text-white border-sky-700 shadow-sm"
+                          : item.tem_laudo
+                          ? "bg-emerald-50 text-emerald-950 border-emerald-300"
+                          : "bg-slate-50 text-slate-800 border-slate-200"
+                      }`}
                     >
-                      + {obs}
+                      <div
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0 ${
+                          isAtivo
+                            ? "bg-white/20 text-white"
+                            : item.tem_laudo
+                            ? "bg-emerald-600 text-white"
+                            : "bg-slate-200 text-slate-800"
+                        }`}
+                      >
+                        #{idx + 1}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-black truncate max-w-[105px]">
+                          {item.nome_paciente.split(" ")[0]}{" "}
+                          {item.nome_paciente.split(" ")[1] || ""}
+                        </div>
+                        <div
+                          className={`text-[9.5px] font-mono ${
+                            isAtivo ? "text-sky-100" : "text-slate-500"
+                          }`}
+                        >
+                          {formatarProntuario(item.prontuario)}
+                        </div>
+                      </div>
+                      {item.tem_laudo && !isAtivo && (
+                        <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                      )}
                     </button>
-                  ))}
-                </div>
-                <input
-                  type="text"
-                  value={obsPso}
-                  onChange={(e) => setObsPso(e.target.value)}
-                  placeholder="Ex: Amostra recebida com fezes formadas; sem interferentes..."
-                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:border-rose-500 focus:bg-white focus:outline-none"
-                />
+                  );
+                })}
               </div>
-            </div>
-          ) : (
-            <div className="text-center py-2 text-xs text-slate-400">
-              Caso este paciente também tenha pedido de Sangue Oculto (PSO), clique no botão acima para lançar o resultado conjuntamente.
-            </div>
-          )}
-        </section>
-
-        {/* SEÇÃO 5: OUTROS TESTES DE BANCADA (BETA-HCG, VHS, VDRL, PCR, COAGULOGRAMA) */}
-        <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 mb-4 shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 mb-4 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold">
-                5
-              </span>
-              <div>
-                <h2 className="text-sm font-black text-slate-900 uppercase tracking-wide">
-                  Outros Testes Rápidos & Provas da Bancada
-                </h2>
-                <p className="text-[11px] text-slate-500 font-medium">
-                  Ative os exames solicitados para este paciente para lançar os resultados
-                </p>
-              </div>
-            </div>
-
-            {/* Chips de ativação rápida */}
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => setTemBetaHcg(!temBetaHcg)}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
-                  temBetaHcg ? "bg-indigo-600 text-white border-indigo-600" : "bg-slate-50 text-slate-700 border-slate-300"
-                }`}
-              >
-                {temBetaHcg ? "✓ Beta-HCG" : "+ Beta-HCG"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setTemVhs(!temVhs)}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
-                  temVhs ? "bg-indigo-600 text-white border-indigo-600" : "bg-slate-50 text-slate-700 border-slate-300"
-                }`}
-              >
-                {temVhs ? "✓ VHS" : "+ VHS"}
-              </button>
-
-                            <button
-                type="button"
-                onClick={() => setTemAboRh(!temAboRh)}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
-                  temAboRh ? "bg-rose-600 text-white border-rose-600" : "bg-slate-50 text-slate-700 border-slate-300"
-                }`}
-              >
-                {temAboRh ? "✓ Tipagem ABO/Rh" : "+ Tipagem ABO/Rh"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setTemVdrl(!temVdrl)}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
-                  temVdrl ? "bg-indigo-600 text-white border-indigo-600" : "bg-slate-50 text-slate-700 border-slate-300"
-                }`}
-              >
-                {temVdrl ? "✓ VDRL" : "+ VDRL"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setTemProvasInflamatorias(!temProvasInflamatorias)}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
-                  temProvasInflamatorias ? "bg-indigo-600 text-white border-indigo-600" : "bg-slate-50 text-slate-700 border-slate-300"
-                }`}
-              >
-                {temProvasInflamatorias ? "✓ PCR/ASLO/FR" : "+ PCR/ASLO/FR"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setTemCoagulograma(!temCoagulograma)}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
-                  temCoagulograma ? "bg-indigo-600 text-white border-indigo-600" : "bg-slate-50 text-slate-700 border-slate-300"
-                }`}
-              >
-                {temCoagulograma ? "✓ Coagulograma" : "+ Coagulograma"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setTemProteinuriaRapida(!temProteinuriaRapida)}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
-                  temProteinuriaRapida ? "bg-amber-600 text-white border-amber-600" : "bg-slate-50 text-slate-700 border-slate-300"
-                }`}
-              >
-                {temProteinuriaRapida ? "✓ Proteinúria Rápida" : "+ Proteinúria Rápida (Gestante)"}
-              </button>
-            </div>
+            )}
           </div>
 
-          <div className="space-y-4">
-            {/* CARD TESTE RÁPIDO DE PROTEINÚRIA (PRÉ-NATAL / PRÉ-ECLÂMPSIA) */}
-            {temProteinuriaRapida && (
-              <div className="p-3 bg-amber-50/70 border border-amber-300 rounded-xl space-y-2">
-                <QuickChipSelect
-                  label="Teste Rápido de Proteinúria (Rastreio Gestacional / Pré-Eclâmpsia)"
-                  sublabel="Método: Tira Reagente / Precipitação Semiquantitativa"
-                  value={resultadoProteinuriaRapida}
-                  onChange={(val) => setResultadoProteinuriaRapida(val)}
-                  options={[
-                    { label: "Negativo (Normal)", value: "Negativo" },
-                    { label: "Traços (< 30 mg/dL)", value: "Traços", isAbnormal: true },
-                    { label: "(+) 30 mg/dL", value: "(+) 30 mg/dL", isAbnormal: true },
-                    { label: "(++) 100 mg/dL", value: "(++) 100 mg/dL", isAbnormal: true },
-                    { label: "(+++) 300 mg/dL", value: "(+++) 300 mg/dL", isAbnormal: true },
-                    { label: "(++++) > 1000 mg/dL", value: "(++++) > 1000 mg/dL", isAbnormal: true },
-                  ]}
-                />
-              </div>
-            )}
-            {/* CARD BETA-HCG */}
-            {temBetaHcg && (
-              <div className="p-3 bg-pink-50/50 border border-pink-200 rounded-xl space-y-2">
-                <QuickChipSelect
-                  label="Beta-HCG (Teste Rápido de Gravidez)"
-                  sublabel="Método: Imunocromatográfico TIG"
-                  value={resultadoBetaHcg}
-                  onChange={(val) => setResultadoBetaHcg(val)}
-                  options={[
-                    { label: "Negativo", value: "Negativo" },
-                    { label: "Positivo (+)", value: "Positivo", isAbnormal: true },
-                    { label: "Inconclusivo / Repetir", value: "Inconclusivo", isAbnormal: true },
-                  ]}
-                />
-              </div>
-            )}
-
-            {/* CARD VHS */}
-            {temVhs && (
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                <QuickChipSelect
-                  label="VHS (Velocidade de Hemossedimentação)"
-                  sublabel="Método: Westergren / Leitura 1 hora"
-                  value={resultadoVhs}
-                  onChange={(val) => setResultadoVhs(val)}
-                  options={[
-                    { label: "5 mm/h", value: "5 mm/1ª hora" },
-                    { label: "10 mm/h", value: "10 mm/1ª hora" },
-                    { label: "15 mm/h", value: "15 mm/1ª hora" },
-                    { label: "20 mm/h", value: "20 mm/1ª hora" },
-                    { label: "30 mm/h", value: "30 mm/1ª hora", isAbnormal: true },
-                    { label: "> 50 mm/h (Aumentado)", value: "> 50 mm/1ª hora", isAbnormal: true },
-                  ]}
-                />
-              </div>
-            )}
-
-                        {/* CARD TIPAGEM SANGUÍNEA ABO E FATOR RH */}
-            {temAboRh && (
-              <div className="p-3 bg-rose-50/50 border border-rose-200 rounded-xl space-y-2.5">
-                <div className="flex items-center justify-between pb-1.5 border-b border-rose-100">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-rose-950 uppercase">
-                      🩸 Tipagem Sanguínea (ABO e Fator Rh)
-                    </span>
-                    <span className="text-[10px] text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded font-medium">
-                      Prova Direta & Reversa
-                    </span>
+          {/* CARD DO PACIENTE ATUAL + BUSCA RÁPIDA COMPACTA */}
+          <section className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-3 mb-2.5">
+            {pacienteInfo ? (
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-2 text-emerald-950">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0">
+                    {indiceAtual >= 0 ? `#${indiceAtual + 1}` : <UserCheck className="w-4 h-4" />}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-black text-xs sm:text-sm truncate uppercase">
+                      {pacienteInfo.nome_paciente}
+                    </div>
+                    <div className="text-[10.5px] text-emerald-800 font-mono truncate">
+                      Pront: {formatarProntuario(pacienteInfo.prontuario)} • {pacienteInfo.exame}
+                    </div>
                   </div>
                 </div>
-                <QuickChipSelect
-                  label="Resultado ABO / Fator Rh"
-                  sublabel="Selecione o grupo sanguíneo e fator Rh observado"
-                  value={resultadoAboRh}
-                  onChange={(val) => setResultadoAboRh(val)}
-                  options={[
-                    { label: "O Positivo (+)", value: "O Positivo (+)" },
-                    { label: "A Positivo (+)", value: "A Positivo (+)" },
-                    { label: "B Positivo (+)", value: "B Positivo (+)" },
-                    { label: "AB Positivo (+)", value: "AB Positivo (+)" },
-                    { label: "O Negativo (-)", value: "O Negativo (-)", isAbnormal: true },
-                    { label: "A Negativo (-)", value: "A Negativo (-)", isAbnormal: true },
-                    { label: "B Negativo (-)", value: "B Negativo (-)", isAbnormal: true },
-                    { label: "AB Negativo (-)", value: "AB Negativo (-)", isAbnormal: true },
-                  ]}
-                />
+                <button
+                  type="button"
+                  onClick={limparFormulario}
+                  className="px-2 py-1 text-[10px] font-bold text-slate-600 bg-white border border-slate-200 rounded-lg shrink-0 active:scale-95"
+                >
+                  Trocar
+                </button>
               </div>
-            )}
-
-            {/* CARD VDRL */}
-            {temVdrl && (
-              <div className="p-3 bg-purple-50/40 border border-purple-200 rounded-xl space-y-2.5">
-                <div className="flex items-center justify-between pb-1.5 border-b border-purple-100 flex-wrap gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-purple-950 uppercase">
-                      VDRL / Sífilis
-                    </span>
-                    <span className="text-[10px] text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded font-medium">
-                      Floculação / Título
-                    </span>
-                  </div>
-
-                  {/* BOTÃO PARA ACUMULAR EM LOTE SEMANAL */}
+            ) : (
+              <div className="space-y-2">
+                <div className="relative flex items-center">
+                  <Scan className="w-4 h-4 text-slate-400 absolute left-3" />
+                  <input
+                    ref={prontuarioInputRef}
+                    type="text"
+                    value={prontuario}
+                    onChange={(e) => {
+                      setProntuario(e.target.value);
+                      setMostrarSugestoes(true);
+                    }}
+                    onFocus={() => setMostrarSugestoes(true)}
+                    onKeyDown={handleProntuarioKeyDown}
+                    placeholder="Buscar prontuário ou nome..."
+                    className="w-full pl-9 pr-20 py-2 text-xs font-bold font-mono text-slate-900 bg-slate-50 border border-slate-300 rounded-xl focus:border-sky-600 focus:bg-white focus:outline-none"
+                  />
                   <button
                     type="button"
-                    onClick={() => {
-                      const novo = !vdrlAcumularLote;
-                      setVdrlAcumularLote(novo);
-                      if (novo) {
-                        setResultadoVdrl("Aguardando lote semanal");
-                      } else {
-                        setResultadoVdrl("Não Reagente");
-                      }
-                    }}
-                    className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition flex items-center gap-1 active:scale-95 ${
-                      vdrlAcumularLote || resultadoVdrl === "Aguardando lote semanal"
-                        ? "bg-purple-700 text-white border-purple-700 shadow-xs"
-                        : "bg-white text-purple-700 border-purple-300 hover:bg-purple-100"
-                    }`}
-                    title="Marque caso este VDRL vá esperar o lote da semana para ser realizado junto"
+                    onClick={() => buscarPaciente(prontuario)}
+                    disabled={isSearching || !prontuario.trim()}
+                    className="absolute right-1.5 px-2.5 py-1 bg-slate-900 text-white font-bold text-[11px] rounded-lg disabled:opacity-40"
                   >
-                    <span>⏳</span>
-                    <span>{vdrlAcumularLote || resultadoVdrl === "Aguardando lote semanal" ? "✓ Marcado: Acumular Lote Semanal" : "Acumular p/ Lote Semanal"}</span>
+                    Buscar
+                  </button>
+
+                  {mostrarSugestoes && sugestoesBusca.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-300 rounded-xl shadow-xl z-30 overflow-hidden max-h-52 overflow-y-auto divide-y divide-slate-100">
+                      {sugestoesBusca.map((sug) => (
+                        <button
+                          key={sug.prontuario}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            selecionarPaciente(sug);
+                          }}
+                          className="w-full px-3 py-2 text-left hover:bg-sky-50 flex items-center justify-between"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-bold text-xs text-slate-900 truncate">
+                              {sug.nome_paciente}
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-mono">
+                              Pront: {formatarProntuario(sug.prontuario)} • {sug.exame}
+                            </div>
+                          </div>
+                          <ArrowRight className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <input
+                  type="text"
+                  value={nomeManual}
+                  onChange={(e) => setNomeManual(e.target.value)}
+                  placeholder="Ou digite o nome do paciente avulso..."
+                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:border-sky-500 focus:outline-none"
+                />
+              </div>
+            )}
+          </section>
+
+          {/* ============================================================ */}
+          {/* FORMULÁRIO DA BANCADA SELECIONADA NO CELULAR                 */}
+          {/* ============================================================ */}
+
+          {/* 1. BANCADA DE URINA I (EAS) */}
+          {bancadaAtiva === "urina" && (
+            <>
+              {/* SEÇÃO 1: EXAME FÍSICO-QUÍMICO (FITA REATIVA) */}
+              <section className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-3 mb-2.5">
+                <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-100">
+                  <h2 className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-sky-100 text-sky-700 flex items-center justify-center text-[11px] font-bold">
+                      1
+                    </span>
+                    Fita Reativa (Físico-Químico)
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...VALORES_PADRAO_NORMAL, observacoes: form.observacoes })}
+                    className="text-[10px] text-slate-500 hover:text-slate-800 flex items-center gap-1 font-bold"
+                  >
+                    <RotateCcw className="w-3 h-3" /> Padrão Normal
                   </button>
                 </div>
 
+                <div className="space-y-3">
+                  <QuickChipSelect
+                    compact
+                    label="Volume da Amostra (VOL)"
+                    sublabel="Ref: Frasco / mL"
+                    value={form.volume || "60 mL"}
+                    onChange={(val) => setForm({ ...form, volume: val })}
+                    options={[
+                      { label: "40 mL", value: "40 mL" },
+                      { label: "50 mL", value: "50 mL" },
+                      { label: "60 mL (Padrão)", value: "60 mL" },
+                      { label: "70 mL", value: "70 mL" },
+                      { label: "80 mL", value: "80 mL" },
+                      { label: "100 mL", value: "100 mL" },
+                      { label: "Frasco", value: "Frasco" },
+                    ]}
+                    allowCustom
+                  />
+
+                  <QuickChipSelect
+                    compact
+                    label="Cor"
+                    value={form.cor}
+                    onChange={(val) => setForm({ ...form, cor: val })}
+                    options={[
+                      { label: "Am. Claro", value: "Amarelo claro" },
+                      { label: "Am. Citrino", value: "Amarelo citrino" },
+                      { label: "Am. Escuro", value: "Amarelo escuro", isAbnormal: true },
+                      { label: "Âmbar", value: "Âmbar", isAbnormal: true },
+                      { label: "Avermelhado", value: "Avermelhado", isAbnormal: true },
+                    ]}
+                  />
+
+                  <QuickChipSelect
+                    compact
+                    label="Aspecto"
+                    value={form.aspecto}
+                    onChange={(val) => setForm({ ...form, aspecto: val })}
+                    options={[
+                      { label: "Límpido", value: "Límpido" },
+                      { label: "Lig. Turvo", value: "Ligeiramente turvo", isAbnormal: true },
+                      { label: "Turvo", value: "Turvo", isAbnormal: true },
+                    ]}
+                  />
+
+                  <QuickChipSelect
+                    compact
+                    label="Densidade"
+                    value={form.densidade}
+                    onChange={(val) => setForm({ ...form, densidade: val })}
+                    options={[
+                      { label: "1.005", value: "1.005", isAbnormal: true },
+                      { label: "1.010", value: "1.010" },
+                      { label: "1.015", value: "1.015" },
+                      { label: "1.020", value: "1.020" },
+                      { label: "1.025", value: "1.025" },
+                      { label: "1.030", value: "1.030", isAbnormal: true },
+                    ]}
+                  />
+
+                  <QuickChipSelect
+                    compact
+                    label="pH"
+                    value={form.ph}
+                    onChange={(val) => setForm({ ...form, ph: val })}
+                    options={[
+                      { label: "5.0", value: "5.0" },
+                      { label: "5.5", value: "5.5" },
+                      { label: "6.0", value: "6.0" },
+                      { label: "6.5", value: "6.5" },
+                      { label: "7.0", value: "7.0" },
+                      { label: "7.5", value: "7.5", isAbnormal: true },
+                      { label: "8.0", value: "8.0", isAbnormal: true },
+                    ]}
+                  />
+
+                  <QuickChipSelect
+                    compact
+                    label="Proteínas"
+                    value={form.proteina}
+                    onChange={(val) => setForm({ ...form, proteina: val })}
+                    options={[
+                      { label: "Negativo", value: "Negativo" },
+                      { label: "Traços", value: "Traços", isAbnormal: true },
+                      { label: "(+)", value: "(+)", isAbnormal: true },
+                      { label: "(++)", value: "(++)", isAbnormal: true },
+                      { label: "(+++)", value: "(+++)", isAbnormal: true },
+                    ]}
+                  />
+
+                  <QuickChipSelect
+                    compact
+                    label="Glicose"
+                    value={form.glicose}
+                    onChange={(val) => setForm({ ...form, glicose: val })}
+                    options={[
+                      { label: "Negativo", value: "Negativo" },
+                      { label: "(+)", value: "(+)", isAbnormal: true },
+                      { label: "(++)", value: "(++)", isAbnormal: true },
+                      { label: "(+++)", value: "(+++)", isAbnormal: true },
+                      { label: "(++++)", value: "(++++)", isAbnormal: true },
+                    ]}
+                  />
+
+                  <QuickChipSelect
+                    compact
+                    label="Sangue / Hemoglobina"
+                    value={form.sangue}
+                    onChange={(val) => setForm({ ...form, sangue: val })}
+                    options={[
+                      { label: "Negativo", value: "Negativo" },
+                      { label: "Traços", value: "Traços", isAbnormal: true },
+                      { label: "(+)", value: "(+)", isAbnormal: true },
+                      { label: "(++)", value: "(++)", isAbnormal: true },
+                      { label: "(+++)", value: "(+++)", isAbnormal: true },
+                    ]}
+                  />
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <QuickChipSelect
+                      compact
+                      label="Nitrito"
+                      value={form.nitrito}
+                      onChange={(val) => setForm({ ...form, nitrito: val })}
+                      options={[
+                        { label: "Negativo", value: "Negativo" },
+                        { label: "Positivo", value: "Positivo", isAbnormal: true },
+                      ]}
+                    />
+
+                    <QuickChipSelect
+                      compact
+                      label="Corpos Cetônicos"
+                      value={form.cetona}
+                      onChange={(val) => setForm({ ...form, cetona: val })}
+                      options={[
+                        { label: "Negativo", value: "Negativo" },
+                        { label: "Positivo", value: "Positivo", isAbnormal: true },
+                      ]}
+                    />
+                  </div>
+
+                  <QuickChipSelect
+                    compact
+                    label="Leucócitos (Esterase da Fita)"
+                    value={form.leucocitos_fita}
+                    onChange={(val) => setForm({ ...form, leucocitos_fita: val })}
+                    options={[
+                      { label: "Negativo", value: "Negativo" },
+                      { label: "Traços", value: "Traços", isAbnormal: true },
+                      { label: "(+)", value: "(+)", isAbnormal: true },
+                      { label: "(++)", value: "(++)", isAbnormal: true },
+                      { label: "(+++)", value: "(+++)", isAbnormal: true },
+                    ]}
+                  />
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <QuickChipSelect
+                      compact
+                      label="Bilirrubina"
+                      value={form.bilirrubina}
+                      onChange={(val) => setForm({ ...form, bilirrubina: val })}
+                      options={[
+                        { label: "Negativo", value: "Negativo" },
+                        { label: "Positivo", value: "Positivo", isAbnormal: true },
+                      ]}
+                    />
+
+                    <QuickChipSelect
+                      compact
+                      label="Urobilinogênio"
+                      value={form.urobilinogenio}
+                      onChange={(val) => setForm({ ...form, urobilinogenio: val })}
+                      options={[
+                        { label: "Normal", value: "Normal" },
+                        { label: "Aumentado", value: "Aumentado", isAbnormal: true },
+                      ]}
+                    />
+                  </div>
+                </div>
+              </section>
+
+              {/* SEÇÃO 2: SEDIMENTOSCOPIA / MICROSCOPIA */}
+              <section className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-3 mb-2.5">
+                <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-100">
+                  <h2 className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                    <span className="w-5 h-5 rounded-md bg-teal-100 text-teal-700 flex items-center justify-center text-[11px] font-bold">
+                      2
+                    </span>
+                    Sedimentoscopia (Microscopia 400x)
+                  </h2>
+                </div>
+
+                <div className="space-y-3">
+                  <QuickChipSelect
+                    compact
+                    label="Leucócitos (L)"
+                    sublabel="Em mil /mL"
+                    value={form.leucocitos_campo}
+                    onChange={(val) => setForm({ ...form, leucocitos_campo: val })}
+                    allowCustom
+                    options={[
+                      { label: "1.000 /mL", value: "1.000 /mL" },
+                      { label: "4.000 /mL", value: "4.000 /mL" },
+                      { label: "8.000 /mL", value: "8.000 /mL" },
+                      { label: "10.000 /mL", value: "10.000 /mL", isAbnormal: true },
+                      { label: "14.000 /mL", value: "14.000 /mL", isAbnormal: true },
+                      { label: "25.000 /mL", value: "25.000 /mL", isAbnormal: true },
+                      { label: "> 100.000 /mL", value: "> 100.000 /mL", isAbnormal: true },
+                    ]}
+                  />
+
+                  <QuickChipSelect
+                    compact
+                    label="Hemácias (H)"
+                    sublabel="Em mil /mL"
+                    value={form.hemacias_campo}
+                    onChange={(val) => setForm({ ...form, hemacias_campo: val })}
+                    allowCustom
+                    options={[
+                      { label: "1.000 /mL", value: "1.000 /mL" },
+                      { label: "2.000 /mL", value: "2.000 /mL" },
+                      { label: "5.000 /mL", value: "5.000 /mL" },
+                      { label: "10.000 /mL", value: "10.000 /mL", isAbnormal: true },
+                      { label: "14.000 /mL", value: "14.000 /mL", isAbnormal: true },
+                      { label: "20.000 /mL", value: "20.000 /mL", isAbnormal: true },
+                      { label: "> 50.000 /mL", value: "> 50.000 /mL", isAbnormal: true },
+                    ]}
+                  />
+
+                  <QuickChipSelect
+                    compact
+                    label="Células Epiteliais (C)"
+                    sublabel="Em mil /mL"
+                    value={form.celulas_epiteliais}
+                    onChange={(val) => setForm({ ...form, celulas_epiteliais: val })}
+                    allowCustom
+                    options={[
+                      { label: "1.000 /mL", value: "1.000 /mL" },
+                      { label: "4.000 /mL", value: "4.000 /mL" },
+                      { label: "6.000 /mL", value: "6.000 /mL" },
+                      { label: "10.000 /mL", value: "10.000 /mL" },
+                      { label: "20.000 /mL", value: "20.000 /mL", isAbnormal: true },
+                      { label: "25.000 /mL", value: "25.000 /mL", isAbnormal: true },
+                    ]}
+                  />
+
+                  <QuickChipSelect
+                    compact
+                    label="Flora Bacteriana (B)"
+                    value={form.bacterias}
+                    onChange={(val) => setForm({ ...form, bacterias: val })}
+                    options={[
+                      { label: "Ausentes", value: "Ausentes" },
+                      { label: "fb (Habitual)", value: "fb" },
+                      { label: "F.B.A (Aumentada)", value: "F.B.A", isAbnormal: true },
+                      { label: "Abundante", value: "Abundante", isAbnormal: true },
+                    ]}
+                  />
+
+                  <div className="space-y-1.5">
+                    <QuickChipSelect
+                      compact
+                      label="Cristais"
+                      value={form.cristais}
+                      onChange={(val) => setForm({ ...form, cristais: val })}
+                      options={[
+                        { label: "Ausentes", value: "Ausentes" },
+                        { label: "Oxalato Cálcio", value: "Oxalato de cálcio", isAbnormal: true },
+                        { label: "Urato Amorfo", value: "Urato amorfo", isAbnormal: true },
+                        { label: "Fosfato Amorfo", value: "Fosfato amorfo", isAbnormal: true },
+                        { label: "Fosfato Triplo", value: "Fosfato triplo", isAbnormal: true },
+                        { label: "Ácido Úrico", value: "Ácido úrico", isAbnormal: true },
+                      ]}
+                    />
+                    <input
+                      type="text"
+                      value={form.cristais}
+                      onChange={(e) => setForm({ ...form, cristais: e.target.value })}
+                      placeholder="Texto livre cristais..."
+                      className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-teal-600 focus:bg-white text-slate-800"
+                    />
+                  </div>
+
+                  <QuickChipSelect
+                    compact
+                    label="Cilindros"
+                    value={form.cilindros}
+                    onChange={(val) => setForm({ ...form, cilindros: val })}
+                    options={[
+                      { label: "Ausentes", value: "Ausentes" },
+                      { label: "Hialinos", value: "Hialinos", isAbnormal: true },
+                      { label: "Granulosos", value: "Granulosos", isAbnormal: true },
+                      { label: "Leucocitários", value: "Leucocitários", isAbnormal: true },
+                      { label: "Hemáticos", value: "Hemáticos", isAbnormal: true },
+                    ]}
+                  />
+
+                  {/* Alerta Clínico pH vs Cristais */}
+                  {(() => {
+                    const phNum = parseFloat(form.ph) || 6.0;
+                    const ehAlcalino = phNum >= 7.0;
+                    const ehAcido = phNum <= 6.0;
+                    const cristaisNorm = form.cristais.toLowerCase();
+
+                    if (
+                      ehAlcalino &&
+                      (cristaisNorm.includes("urato") ||
+                        cristaisNorm.includes("ácido úrico") ||
+                        cristaisNorm.includes("acido urico"))
+                    ) {
+                      return (
+                        <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl text-[11px] text-amber-950 flex items-start gap-2">
+                          <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div className="space-y-1">
+                            <span className="font-black block">
+                              pH Alcalino ({form.ph}) vs. Cristal Ácido
+                            </span>
+                            <div className="flex flex-wrap gap-1.5 pt-0.5">
+                              <button
+                                type="button"
+                                onClick={() => setForm({ ...form, cristais: "Fosfato amorfo" })}
+                                className="font-bold bg-amber-200 px-2 py-1 rounded-md"
+                              >
+                                ➔ Mudar p/ Fosfato Amorfo
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    if (
+                      ehAcido &&
+                      (cristaisNorm.includes("fosfato amorfo") ||
+                        cristaisNorm.includes("fosfato triplo"))
+                    ) {
+                      return (
+                        <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl text-[11px] text-amber-950 flex items-start gap-2">
+                          <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div className="space-y-1">
+                            <span className="font-black block">
+                              pH Ácido ({form.ph}) vs. Fosfato
+                            </span>
+                            <div className="flex flex-wrap gap-1.5 pt-0.5">
+                              <button
+                                type="button"
+                                onClick={() => setForm({ ...form, cristais: "Urato amorfo" })}
+                                className="font-bold bg-amber-200 px-2 py-1 rounded-md"
+                              >
+                                ➔ Mudar p/ Urato Amorfo
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              </section>
+
+              {/* SE O PACIENTE DE URINA TAMBÉM TIVER OUTRO EXAME DE BANCADA SOLICITADO (EX: MARCELA -> URINA I + PROTEINÚRIA RÁPIDA), EXIBIR JUNTO! */}
+              {(temProteinuriaRapida ||
+                temPso ||
+                temAboRh ||
+                temVdrl ||
+                temBetaHcg ||
+                temVhs ||
+                temProvasInflamatorias ||
+                temCoagulograma) && (
+                <section className="bg-amber-50/60 rounded-2xl border border-amber-300 p-3 mb-2.5 space-y-2.5">
+                  <div className="text-[11px] font-black text-amber-950 uppercase">
+                    ⚡ Exames Adicionais deste Paciente na Bancada:
+                  </div>
+                  {temProteinuriaRapida && (
+                    <QuickChipSelect
+                      compact
+                      label="Proteinúria - Teste Rápido"
+                      value={resultadoProteinuriaRapida}
+                      onChange={setResultadoProteinuriaRapida}
+                      options={[
+                        { label: "Negativo", value: "Negativo" },
+                        { label: "Traços", value: "Traços", isAbnormal: true },
+                        { label: "(+) 30 mg/dL", value: "(+) 30 mg/dL", isAbnormal: true },
+                        { label: "(++) 100 mg/dL", value: "(++) 100 mg/dL", isAbnormal: true },
+                        { label: "(+++) 300 mg/dL", value: "(+++) 300 mg/dL", isAbnormal: true },
+                      ]}
+                    />
+                  )}
+                  {temPso && (
+                    <QuickChipSelect
+                      compact
+                      label="Sangue Oculto nas Fezes (PSO)"
+                      value={resultadoPso}
+                      onChange={setResultadoPso}
+                      options={[
+                        { label: "Negativo", value: "Negativo" },
+                        { label: "Positivo (+)", value: "Positivo", isAbnormal: true },
+                        { label: "Traços", value: "Traços", isAbnormal: true },
+                      ]}
+                    />
+                  )}
+                  {temAboRh && (
+                    <QuickChipSelect
+                      compact
+                      label="Tipagem ABO / Fator Rh"
+                      value={resultadoAboRh}
+                      onChange={setResultadoAboRh}
+                      options={[
+                        { label: "O Pos (+)", value: "O Positivo (+)" },
+                        { label: "A Pos (+)", value: "A Positivo (+)" },
+                        { label: "B Pos (+)", value: "B Positivo (+)" },
+                        { label: "AB Pos (+)", value: "AB Positivo (+)" },
+                        { label: "O Neg (-)", value: "O Negativo (-)", isAbnormal: true },
+                        { label: "A Neg (-)", value: "A Negativo (-)", isAbnormal: true },
+                        { label: "B Neg (-)", value: "B Negativo (-)", isAbnormal: true },
+                        { label: "AB Neg (-)", value: "AB Negativo (-)", isAbnormal: true },
+                      ]}
+                    />
+                  )}
+                </section>
+              )}
+            </>
+          )}
+
+          {/* 2. BANCADA DE TESTES RÁPIDOS / IMUNO (POSITIVO / NEGATIVO / ABO-RH / VDRL) */}
+          {bancadaAtiva === "imuno" && (
+            <section className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-3 mb-2.5 space-y-3">
+              <div className="pb-2 border-b border-slate-100">
+                <h2 className="text-xs font-black text-slate-900 uppercase">
+                  Contagem de Testes Rápidos & Imunologia
+                </h2>
+                <p className="text-[10.5px] text-slate-500">
+                  Toque em Positivo / Negativo para os exames solicitados
+                </p>
+              </div>
+
+              {/* Seletores rápidos de quais testes exibir */}
+              <div className="flex flex-wrap gap-1">
+                {[
+                  {
+                    ativo: temProteinuriaRapida,
+                    toggle: () => setTemProteinuriaRapida(!temProteinuriaRapida),
+                    label: "Proteinúria Rápida",
+                  },
+                  {
+                    ativo: temAboRh,
+                    toggle: () => setTemAboRh(!temAboRh),
+                    label: "ABO / Rh",
+                  },
+                  {
+                    ativo: temVdrl,
+                    toggle: () => setTemVdrl(!temVdrl),
+                    label: "VDRL",
+                  },
+                  {
+                    ativo: temBetaHcg,
+                    toggle: () => setTemBetaHcg(!temBetaHcg),
+                    label: "Beta-HCG",
+                  },
+                  {
+                    ativo: temProvasInflamatorias,
+                    toggle: () => setTemProvasInflamatorias(!temProvasInflamatorias),
+                    label: "PCR / ASLO / FR",
+                  },
+                  {
+                    ativo: temVhs,
+                    toggle: () => setTemVhs(!temVhs),
+                    label: "VHS",
+                  },
+                ].map((chip) => (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    onClick={chip.toggle}
+                    className={`px-2 py-1 text-[10.5px] font-bold rounded-lg border transition ${
+                      chip.ativo
+                        ? "bg-sky-700 text-white border-sky-700"
+                        : "bg-slate-50 text-slate-600 border-slate-200"
+                    }`}
+                  >
+                    {chip.ativo ? `✓ ${chip.label}` : `+ ${chip.label}`}
+                  </button>
+                ))}
+              </div>
+
+              {/* Proteinúria Teste Rápido */}
+              <div className="p-2.5 bg-amber-50/60 border border-amber-200 rounded-xl">
                 <QuickChipSelect
-                  label="Resultado do VDRL"
-                  sublabel={vdrlAcumularLote ? "Amostra guardada para rodar no lote semanal da bancada" : "Selecione o título observado"}
+                  compact
+                  label="Proteinúria - Teste Rápido"
+                  value={resultadoProteinuriaRapida}
+                  onChange={(val) => {
+                    setTemProteinuriaRapida(true);
+                    setResultadoProteinuriaRapida(val);
+                  }}
+                  options={[
+                    { label: "Negativo", value: "Negativo" },
+                    { label: "Traços", value: "Traços", isAbnormal: true },
+                    { label: "Positivo (+)", value: "(+) 30 mg/dL", isAbnormal: true },
+                    { label: "Positivo (++)", value: "(++) 100 mg/dL", isAbnormal: true },
+                    { label: "Positivo (+++)", value: "(+++) 300 mg/dL", isAbnormal: true },
+                  ]}
+                />
+              </div>
+
+              {/* Tipagem ABO / Rh */}
+              <div className="p-2.5 bg-rose-50/50 border border-rose-200 rounded-xl">
+                <QuickChipSelect
+                  compact
+                  label="Tipagem Sanguínea ABO e Fator Rh"
+                  value={resultadoAboRh}
+                  onChange={(val) => {
+                    setTemAboRh(true);
+                    setResultadoAboRh(val);
+                  }}
+                  options={[
+                    { label: "O Pos (+)", value: "O Positivo (+)" },
+                    { label: "A Pos (+)", value: "A Positivo (+)" },
+                    { label: "B Pos (+)", value: "B Positivo (+)" },
+                    { label: "AB Pos (+)", value: "AB Positivo (+)" },
+                    { label: "O Neg (-)", value: "O Negativo (-)", isAbnormal: true },
+                    { label: "A Neg (-)", value: "A Negativo (-)", isAbnormal: true },
+                    { label: "B Neg (-)", value: "B Negativo (-)", isAbnormal: true },
+                    { label: "AB Neg (-)", value: "AB Negativo (-)", isAbnormal: true },
+                  ]}
+                />
+              </div>
+
+              {/* VDRL */}
+              <div className="p-2.5 bg-purple-50/50 border border-purple-200 rounded-xl">
+                <QuickChipSelect
+                  compact
+                  label="VDRL (Sífilis)"
                   value={resultadoVdrl}
                   onChange={(val) => {
+                    setTemVdrl(true);
                     setResultadoVdrl(val);
-                    if (val === "Aguardando lote semanal") {
-                      setVdrlAcumularLote(true);
-                    } else {
-                      setVdrlAcumularLote(false);
-                    }
                   }}
                   options={[
                     { label: "Não Reagente", value: "Não Reagente" },
@@ -2285,248 +2118,301 @@ export default function BancadaPage() {
                     { label: "Reagente 1:4", value: "Reagente 1/4", isAbnormal: true },
                     { label: "Reagente 1:8", value: "Reagente 1/8", isAbnormal: true },
                     { label: "Reagente ≥ 1:16", value: "Reagente 1/16", isAbnormal: true },
-                    { label: "⏳ Aguardando Lote Semanal", value: "Aguardando lote semanal" },
                   ]}
                 />
               </div>
-            )}
 
-            {/* CARD PROVAS INFLAMATÓRIAS (PCR / ASLO / FR) */}
-            {temProvasInflamatorias && (
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Beta-HCG */}
+              <div className="p-2.5 bg-pink-50/50 border border-pink-200 rounded-xl">
                 <QuickChipSelect
+                  compact
+                  label="Beta-HCG (Teste Rápido)"
+                  value={resultadoBetaHcg}
+                  onChange={(val) => {
+                    setTemBetaHcg(true);
+                    setResultadoBetaHcg(val);
+                  }}
+                  options={[
+                    { label: "Negativo", value: "Negativo" },
+                    { label: "Positivo (+)", value: "Positivo", isAbnormal: true },
+                    { label: "Inconclusivo", value: "Inconclusivo", isAbnormal: true },
+                  ]}
+                />
+              </div>
+
+              {/* PCR / ASLO / FR */}
+              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                <QuickChipSelect
+                  compact
                   label="PCR (Proteína C Reativa)"
-                  sublabel="Ref: < 6 mg/L"
                   value={resultadoPcr}
-                  onChange={(val) => setResultadoPcr(val)}
+                  onChange={(val) => {
+                    setTemProvasInflamatorias(true);
+                    setResultadoPcr(val);
+                  }}
                   options={[
                     { label: "Negativo (< 6)", value: "Negativo (< 6 mg/L)" },
                     { label: "Positivo (+)", value: "Positivo (> 6 mg/L)", isAbnormal: true },
                   ]}
                 />
                 <QuickChipSelect
-                  label="ASLO (Antiestreptolisina O)"
-                  sublabel="Ref: < 200 UI/mL"
+                  compact
+                  label="ASLO (Antiestreptolisina-O)"
                   value={resultadoAslo}
-                  onChange={(val) => setResultadoAslo(val)}
+                  onChange={(val) => {
+                    setTemProvasInflamatorias(true);
+                    setResultadoAslo(val);
+                  }}
                   options={[
                     { label: "Negativo (< 200)", value: "Negativo (< 200 UI/mL)" },
                     { label: "Positivo (+)", value: "Positivo (> 200 UI/mL)", isAbnormal: true },
                   ]}
                 />
                 <QuickChipSelect
-                  label="FR (Fator Reumatoide / Látex)"
-                  sublabel="Ref: < 8 UI/mL"
+                  compact
+                  label="FR (Fator Reumatoide)"
                   value={resultadoFr}
-                  onChange={(val) => setResultadoFr(val)}
+                  onChange={(val) => {
+                    setTemProvasInflamatorias(true);
+                    setResultadoFr(val);
+                  }}
                   options={[
                     { label: "Negativo (< 8)", value: "Negativo (< 8 UI/mL)" },
                     { label: "Positivo (+)", value: "Positivo (> 8 UI/mL)", isAbnormal: true },
                   ]}
                 />
               </div>
-            )}
 
-            {/* CARD COAGULOGRAMA */}
-            {temCoagulograma && (
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-                <div className="flex items-center justify-between flex-wrap gap-2 pb-1.5 border-b border-slate-200">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-800 uppercase">
-                      Coagulograma (TP / INR & TTPA)
-                    </span>
-                    {/* BOTÃO REPETIR E CONFIRMAR */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const novo = !coagRepetido;
-                        setCoagRepetido(novo);
-                        if (novo) {
-                          if (!coagTp1 && coagTpTempo) setCoagTp1(coagTpTempo);
-                          if (!coagTtpa1 && coagTtpaTempo) setCoagTtpa1(coagTtpaTempo);
-                          aplicarFraseObservacao("Exame de coagulograma repetido e confirmado em duplicata técnica nesta mesma amostra.");
-                        }
-                      }}
-                      className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition flex items-center gap-1.5 active:scale-95 ${
-                        coagRepetido
-                          ? "bg-amber-600 text-white border-amber-600 shadow-xs"
-                          : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
-                      }`}
-                      title="Clique caso tenha repetido a dosagem para confirmar resultado alterado"
-                    >
-                      <span>🔁</span>
-                      <span>{coagRepetido ? "✓ Repetido & Confirmado" : "Repetir & Confirmar"}</span>
-                    </button>
-                  </div>
+              {/* VHS */}
+              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                <QuickChipSelect
+                  compact
+                  label="VHS (1ª Hora)"
+                  value={resultadoVhs}
+                  onChange={(val) => {
+                    setTemVhs(true);
+                    setResultadoVhs(val);
+                  }}
+                  allowCustom
+                  options={[
+                    { label: "5 mm/h", value: "5 mm/1ª hora" },
+                    { label: "10 mm/h", value: "10 mm/1ª hora" },
+                    { label: "15 mm/h", value: "15 mm/1ª hora" },
+                    { label: "20 mm/h", value: "20 mm/1ª hora" },
+                    { label: "30 mm/h", value: "30 mm/1ª hora", isAbnormal: true },
+                    { label: "> 50 mm/h", value: "> 50 mm/1ª hora", isAbnormal: true },
+                  ]}
+                />
+              </div>
+            </section>
+          )}
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCoagTpTempo("12.0 seg");
-                      setCoagTpInr("1.00");
-                      setCoagTtpaTempo("31.0 seg");
-                      setCoagTtpaRelacao("1.00");
-                    }}
-                    className="text-[11px] font-bold text-indigo-700 hover:text-indigo-900 underline"
-                  >
-                    Preencher Valores Normais
-                  </button>
+          {/* 3. BANCADA DE COAGULOGRAMA / TAP */}
+          {bancadaAtiva === "coag" && (
+            <section className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-3 mb-2.5 space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div>
+                  <h2 className="text-xs font-black text-slate-900 uppercase">
+                    Coagulograma / TAP (TP & TTPA)
+                  </h2>
+                  <p className="text-[10.5px] text-slate-500">
+                    Tempo de Atividade de Protrombina e INR
+                  </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCoagTpTempo("12.0 seg");
+                    setCoagTpInr("1.00");
+                    setCoagTtpaTempo("31.0 seg");
+                    setCoagTtpaRelacao("1.00");
+                  }}
+                  className="text-[10.5px] font-bold text-sky-700 underline"
+                >
+                  Padrão Normal
+                </button>
+              </div>
 
-                {/* PAINEL DE CONFIRMAÇÃO DE DUPLICATA TÉCNICA */}
-                {coagRepetido && (
-                  <div className="bg-amber-50 border border-amber-300 rounded-lg p-2.5 space-y-2">
-                    <div className="flex items-center justify-between text-xs font-bold text-amber-950">
-                      <span className="flex items-center gap-1">
-                        <span>⚠️</span>
-                        <span>Dosagem Repetida em Duplicata Técnica:</span>
-                      </span>
-                      <span className="text-[10px] text-amber-800 font-normal">
-                        Consta na nota do laudo oficial
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <label className="block text-slate-600 font-semibold mb-0.5">1ª Medição (TP anterior)</label>
-                        <input
-                          type="text"
-                          value={coagTp1}
-                          onChange={(e) => setCoagTp1(e.target.value)}
-                          placeholder="Ex: 18.2 seg"
-                          className="w-full px-2 py-1 bg-white border border-amber-300 rounded text-xs"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-slate-600 font-semibold mb-0.5">1ª Medição (TTPA anterior)</label>
-                        <input
-                          type="text"
-                          value={coagTtpa1}
-                          onChange={(e) => setCoagTtpa1(e.target.value)}
-                          placeholder="Ex: 45.0 seg"
-                          className="w-full px-2 py-1 bg-white border border-amber-300 rounded text-xs"
-                        />
-                      </div>
-                    </div>
-                    <p className="text-[10.5px] text-amber-900 italic">
-                      * Preencha nos campos abaixo os valores finais confirmados na segunda corrida.
-                    </p>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                  <div>
-                    <label className="block text-slate-600 font-semibold mb-1">
-                      TP {coagRepetido ? "(Confirmado)" : "(Tempo)"}
-                    </label>
-                    <input
-                      type="text"
-                      value={coagTpTempo}
-                      onChange={(e) => setCoagTpTempo(e.target.value)}
-                      placeholder="Ex: 12.5 seg"
-                      className={`w-full px-2.5 py-1.5 bg-white border rounded-lg text-xs font-bold ${
-                        coagRepetido ? "border-amber-400 text-amber-950" : "border-slate-300"
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-600 font-semibold mb-1">INR (RNI)</label>
-                    <input
-                      type="text"
-                      value={coagTpInr}
-                      onChange={(e) => setCoagTpInr(e.target.value)}
-                      placeholder="Ex: 1.02"
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-600 font-semibold mb-1">
-                      TTPA {coagRepetido ? "(Confirmado)" : "(Tempo)"}
-                    </label>
-                    <input
-                      type="text"
-                      value={coagTtpaTempo}
-                      onChange={(e) => setCoagTtpaTempo(e.target.value)}
-                      placeholder="Ex: 31.0 seg"
-                      className={`w-full px-2.5 py-1.5 bg-white border rounded-lg text-xs font-bold ${
-                        coagRepetido ? "border-amber-400 text-amber-950" : "border-slate-300"
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-600 font-semibold mb-1">TTPA (Relação)</label>
-                    <input
-                      type="text"
-                      value={coagTtpaRelacao}
-                      onChange={(e) => setCoagTtpaRelacao(e.target.value)}
-                      placeholder="Ex: 1.00"
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold"
-                    />
-                  </div>
+              <div className="grid grid-cols-2 gap-2.5 text-xs">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1 text-[11px]">
+                    TP / TAP (Segundos)
+                  </label>
+                  <input
+                    type="text"
+                    value={coagTpTempo}
+                    onChange={(e) => setCoagTpTempo(e.target.value)}
+                    placeholder="Ex: 12.5 seg"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1 text-[11px]">
+                    INR (RNI)
+                  </label>
+                  <input
+                    type="text"
+                    value={coagTpInr}
+                    onChange={(e) => setCoagTpInr(e.target.value)}
+                    placeholder="Ex: 1.00"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1 text-[11px]">
+                    TTPA (Segundos)
+                  </label>
+                  <input
+                    type="text"
+                    value={coagTtpaTempo}
+                    onChange={(e) => setCoagTtpaTempo(e.target.value)}
+                    placeholder="Ex: 30.0 seg"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1 text-[11px]">
+                    TTPA (Relação)
+                  </label>
+                  <input
+                    type="text"
+                    value={coagTtpaRelacao}
+                    onChange={(e) => setCoagTtpaRelacao(e.target.value)}
+                    placeholder="Ex: 1.00"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold"
+                  />
                 </div>
               </div>
-            )}
+            </section>
+          )}
 
-            {!temBetaHcg && !temVhs && !temVdrl && !temProvasInflamatorias && !temCoagulograma && (
-              <div className="text-center py-2 text-xs text-slate-400">
-                Se este paciente tiver solicitações de outros testes manuais da bancada (Beta-HCG, VHS, VDRL, PCR ou Coagulograma), use os botões acima para ativá-los.
+          {/* 4. BANCADA DE SANGUE OCULTO NAS FEZES (PSO) */}
+          {bancadaAtiva === "pso" && (
+            <section className="bg-white rounded-2xl border border-rose-200 shadow-2xs p-3 mb-2.5 space-y-3">
+              <div className="pb-2 border-b border-slate-100">
+                <h2 className="text-xs font-black text-slate-900 uppercase">
+                  Sangue Oculto nas Fezes (PSO)
+                </h2>
+                <p className="text-[10.5px] text-slate-500">
+                  Toque no resultado observado na placa
+                </p>
               </div>
-            )}
-          </div>
-        </section>
+
+              <QuickChipSelect
+                compact
+                label="Resultado do Sangue Oculto (PSO)"
+                value={resultadoPso}
+                onChange={(val) => {
+                  setTemPso(true);
+                  setResultadoPso(val);
+                }}
+                options={[
+                  { label: "Negativo", value: "Negativo" },
+                  { label: "Positivo (+)", value: "Positivo", isAbnormal: true },
+                  { label: "Traços / Duvidoso", value: "Traços", isAbnormal: true },
+                  {
+                    label: "Amostra Inadequada",
+                    value: "Amostra Inadequada / Recoleta",
+                    isAbnormal: true,
+                  },
+                ]}
+              />
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                  Observações do PSO
+                </label>
+                <input
+                  type="text"
+                  value={obsPso}
+                  onChange={(e) => setObsPso(e.target.value)}
+                  placeholder="Opcional: dieta, aspecto da amostra..."
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl"
+                />
+              </div>
+            </section>
+          )}
+
+          {/* OBSERVAÇÕES RÁPIDAS */}
+          <section className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-3 mb-4">
+            <label className="block text-[11px] font-black text-slate-700 uppercase mb-1.5">
+              Observações / Motivo de Recoleta
+            </label>
+            <div className="mb-2 flex flex-wrap gap-1">
+              {[
+                "Amostra insuficiente.",
+                "Presença de muco.",
+                "Período menstrual.",
+                "Repetido e confirmado.",
+              ].map((frase) => (
+                <button
+                  key={frase}
+                  type="button"
+                  onClick={() => aplicarFraseObservacao(frase)}
+                  className="text-[10.5px] bg-slate-100 text-slate-700 px-2 py-1 rounded-lg border border-slate-200 active:scale-95"
+                >
+                  + {frase}
+                </button>
+              ))}
+            </div>
+            <input
+              type="text"
+              value={form.observacoes}
+              onChange={(e) => setForm({ ...form, observacoes: e.target.value })}
+              placeholder="Observações opcionais..."
+              className="w-full px-3 py-2 text-xs text-slate-800 bg-slate-50 border border-slate-300 rounded-xl"
+            />
+          </section>
         </div>
       )}
 
-      {/* BARRA FIXA DE AÇÃO NO RODAPÉ (EXCLUSIVA PARA CELULAR / BANCADA COM LUVAS) */}
+      {/* BARRA FIXA DE SALVAMENTO NO RODAPÉ (EXCLUSIVA PARA O CELULAR) */}
       {modoTela === "mobile" && (
-        <div className="fixed bottom-14 md:bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-300 shadow-2xl p-3 sm:px-6">
-          <div className="max-w-4xl mx-auto flex items-center gap-2 sm:gap-4">
-            {/* BOTÃO SALVAR RASCUNHO */}
+        <div className="fixed bottom-12 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-300 shadow-2xl p-2 print:hidden">
+          <div className="max-w-lg mx-auto flex items-center gap-1.5">
             <button
               type="button"
               disabled={isSaving}
               onClick={() => handleSalvar("rascunho")}
-              className="flex-1 sm:flex-initial sm:px-5 py-3 sm:py-3.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 text-xs sm:text-sm active:scale-95 disabled:opacity-50"
+              className="px-3 py-2.5 bg-amber-500 active:bg-amber-700 text-white font-bold rounded-xl shadow-sm flex items-center justify-center gap-1 text-xs active:scale-95 disabled:opacity-50"
             >
-              <Save className="w-4 h-4" />
+              <Save className="w-3.5 h-3.5" />
               <span>Rascunho</span>
             </button>
 
-            {/* BOTÃO MARCAR RECOLETA */}
             <button
               type="button"
               disabled={isSaving}
               onClick={() => handleSalvar("recoleta")}
-              className="flex-1 sm:flex-initial sm:px-5 py-3 sm:py-3.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 text-xs sm:text-sm active:scale-95 disabled:opacity-50"
+              className="px-3 py-2.5 bg-rose-600 active:bg-rose-800 text-white font-bold rounded-xl shadow-sm flex items-center justify-center gap-1 text-xs active:scale-95 disabled:opacity-50"
             >
-              <AlertTriangle className="w-4 h-4" />
+              <AlertTriangle className="w-3.5 h-3.5" />
               <span>Recoleta</span>
             </button>
 
-            {/* BOTÃO PRINCIPAL: FINALIZAR AMOSTRA & PRÓXIMO TUBO */}
             <button
               type="button"
               disabled={isSaving}
               onClick={() => handleSalvar("finalizado")}
-              className="flex-2 sm:flex-1 py-3 sm:py-3.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black rounded-xl shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 text-sm sm:text-base active:scale-95 disabled:opacity-50"
+              className="flex-1 py-2.5 px-3 bg-emerald-600 active:bg-emerald-800 text-white font-black rounded-xl shadow-md shadow-emerald-600/25 flex items-center justify-center gap-1.5 text-xs sm:text-sm active:scale-95 disabled:opacity-50"
             >
-              <CheckCircle2 className="w-5 h-5" />
-              <span>
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span className="truncate">
                 {isSaving
-                  ? "Gravando..."
+                  ? "Salvando..."
                   : proximoTubo
-                  ? `Salvar & Tubo #${indiceAtual + 2} ➔`
-                  : "Finalizar Amostra"}
+                  ? `Salvar & Ir p/ #${indiceAtual + 2} ➔`
+                  : "Finalizar Contagem"}
               </span>
             </button>
           </div>
         </div>
       )}
 
-            {/* MODAL DE PRÉ-VISUALIZAÇÃO DE IMPRESSÃO (TIRAGEM OU CANHOTOS) */}
+      {/* MODAL DE PRÉ-VISUALIZAÇÃO DE IMPRESSÃO (TIRAGEM OU CANHOTOS) */}
       {previewImpressao && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 print:hidden">
           <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-300">
-            {/* Topbar do Modal */}
             <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <Printer className="w-5 h-5 text-sky-400" />
@@ -2558,11 +2444,14 @@ export default function BancadaPage() {
               </div>
             </div>
 
-            {/* Conteúdo Imprimível Renderizado na Tela */}
             <div className="p-6 overflow-y-auto bg-slate-100 flex-1">
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                 {previewImpressao === "triagem" ? (
-                  <MapaBancadaPrintView pacientes={rotinaDia} dataRotina={dataHoje} />
+                  <MapaBancadaPrintView
+                    pacientes={rotinaDia}
+                    laudos={laudosDia}
+                    dataRotina={dataHoje}
+                  />
                 ) : (
                   <RelatorioBancadaDiaPrintView
                     laudos={
@@ -2591,13 +2480,15 @@ export default function BancadaPage() {
         </div>
       )}
 
-      {/* ÁREA DE IMPRESSÃO (EXCLUSIVA PARA WINDOW.PRINT) */}
+      {/* ÁREA DE IMPRESSÃO (EXCLUSIVA PARA WINDOW.PRINT NO COMPUTADOR) */}
       <div className="hidden print:block">
         {tipoImpressao === "triagem" ? (
-          /* RELATÓRIO 1: TRIAGEM DO DIA (MAPA SIMPLES PARA BANCADA) */
-          <MapaBancadaPrintView pacientes={rotinaDia} dataRotina={dataHoje} />
+          <MapaBancadaPrintView
+            pacientes={rotinaDia}
+            laudos={laudosDia}
+            dataRotina={dataHoje}
+          />
         ) : (
-          /* RELATÓRIO 2: FINAL DA ROTINA (RESULTADOS CERTINHOS EM CANHOTOS/TIRAS COMO NA FOTO) */
           <RelatorioBancadaDiaPrintView
             laudos={
               laudosDia.length > 0
@@ -2616,7 +2507,7 @@ export default function BancadaPage() {
                   }))
             }
             dataSelecionada={dataHoje}
-            modo="tiras"
+            modo={modoRelatorio}
           />
         )}
       </div>

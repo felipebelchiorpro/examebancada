@@ -2,6 +2,7 @@ export type StatusLaudo = "rascunho" | "recoleta" | "finalizado";
 
 export interface LaudoUrina {
   id?: string;
+  id_linha?: number;
   data_hora: string; // ISO string
   prontuario: string;
   nome_paciente: string;
@@ -30,8 +31,10 @@ export interface LaudoUrina {
   leucocitos_campo: string;
   hemacias_campo: string;
   bacterias: string;
+  muco?: string;
   cristais: string;
   cilindros: string;
+  outros_elementos?: string;
 
   // 2. Pesquisa de Sangue Oculto (PSO)
   tem_pso?: boolean;
@@ -76,15 +79,17 @@ export interface LaudoUrina {
   resultado_proteinuria_rapida?: string;
   // 7. Grupo Sanguíneo e Fator Rh
   tem_abo_rh?: boolean;
-  resultado_abo_rh?: string; // "Negativo" | "Traços" | "(+) 30 mg/dL" | "(++) 100 mg/dL" | "(+++) 300 mg/dL" | "(++++) > 1000 mg/dL"
+  resultado_abo_rh?: string;
 
   observacoes: string;
   status: StatusLaudo;
+  responsavel_tecnico?: string;
 }
 
 export interface RotinaItem {
   id?: string;
   data: string; // YYYY-MM-DD
+  data_rotina?: string; // YYYY-MM-DD
   prontuario: string;
   nome_paciente: string;
   idade_sexo: string;
@@ -147,8 +152,10 @@ export const VALORES_PADRAO_NORMAL: Omit<LaudoUrina, "data_hora" | "prontuario" 
   leucocitos_campo: "4.000 /mL",
   hemacias_campo: "1.000 /mL",
   bacterias: "Ausentes",
+  muco: "Ausente",
   cristais: "Ausentes",
   cilindros: "Ausentes",
+  outros_elementos: "Ausentes",
   tem_pso: false,
   resultado_pso: "Negativo",
   tem_proteinuria_rapida: false,

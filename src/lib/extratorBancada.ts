@@ -1,353 +1,583 @@
-/**
- * EXTRATOR E CLASSIFICADOR DE BANCADA SUS (100% TYPESCRIPT / ZERO DEPENDÊNCIA PYTHON)
- * 
- * Roda 100% no servidor da Vercel e no browser.
- * Filtra relatórios brutos do Conecta SUS / Laboratório Municipal (Excel, CSV ou PDF),
- * descartando exames de bioquímica/hemograma automatizados e agrupando pacientes
- * por setores de bancada manual.
- */
-
 import { RotinaItem } from "@/types/urinalise";
+export type ItemRotina = RotinaItem;
 
-// Exames automatizados a descartar estritamente
-export const EXAMES_DESCARTAR_AUTOMATIZADOS = [
-  "GLICEMIA", "GLICOSE", "HEMOGLOBINA GLICADA", "HBA1C", "GLICOHEMOGLOBINA",
-  "COLESTEROL", "HDL", "LDL", "VLDL", "LIPIDOGRAMA", "PERFIL LIPIDICO",
-  "TRIGLICERIDEOS", "TRIGLICERIDES", "TRIGLICERIDIOS",
-  "UREIA", "CREATININA", "CLEARANCE DE CREATININA",
-  "TGO", "AST", "TRANSAMINASE OXALACETICA",
-  "TGP", "ALT", "TRANSAMINASE PIRUVICA", "TRANSAMINASES",
-  "FOSFATASE ALCALINA",
-  "GAMA GT", "GAMA GLUTAMIL", "GGT",
-  "BILIRRUBINA TOTAL", "BILIRRUBINA DIRETA", "BILIRRUBINA INDIRETA",
-  "ACIDO URICO", "URICEMIA",
-  "CPK", "CK", "CK MB", "CKMB", "CREATINOFOSFOQUINASE",
-  "PROTEINAS TOTAIS", "PROTEINAS TOTAIS E FRACOES", "ALBUMINA",
-  "HEMOGRAMA", "HEMOGRAMA COMPLETO", "ERITROGRAMA", "LEUCOGRAMA", "CONTAGEM DE PLAQUETAS",
-  "SODIO", "POTASSIO", "CLORETO", "CLORO", "CALCIO", "MAGNESIO", "FOSFORO",
-  "FERRO SERICO", "FERRITINA", "TRANSFERRINA", "CAPACIDADE TOTAL DE LIGACAO"
-];
-
-export interface ExameClassificado {
-  setor: "Urinálise" | "Sangue Oculto" | "Coagulograma" | "VDRL" | "Testes Rápidos" | "Provas Inflamatórias" | "Tipagem Sanguínea" | "Outro";
-  nomePadrao: string;
+export interface LinhaColetaBruta {
+  dataColeta: string;
+  paciente: string;
+  prontuario: string;
+  codigoProcedimento: string;
+  procedimento: string;
+  exame: string;
 }
 
-export function normalizarTexto(texto: string): string {
-  if (!texto) return "";
-  return texto
+export interface LinhaRelatorioBancada {
+  exame: string;
+  paciente: string;
+  prontuario: string;
+  resultado: string;
+}
+
+export interface ResultadoExtracaoBancada {
+  dataReferencia: string;
+  totalLinhasBrutas: number;
+  totalExamesBancada: number;
+  totalDescartadosBioquimica: number;
+  totalLidos: number;
+  totalAproveitados: number;
+  totalDescartadosAutomatizados: number;
+  linhasRelatorioBancada: LinhaRelatorioBancada[];
+  pacientesUnificados: ItemRotina[];
+}
+
+/**
+ * Remove acentos e converte para maiúsculas para comparação segura
+ */
+export function normalizarTexto(str: string): string {
+  return (str || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toUpperCase()
-    .replace(/[^A-Z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
     .trim();
 }
 
 /**
- * Classifica um nome de exame individual nas regras da bancada SUS
+ * Formata o prontuário preservando 7 dígitos com zeros à esquerda (padrão Conecta SUS: ex. 0021559)
  */
-export function classificarExameBancada(textoExame: string): ExameClassificado | null {
-  const norm = normalizarTexto(textoExame);
-  if (!norm) return null;
-
-  // 1. Urinálise
-  if (
-    norm.includes("URINA") ||
-    /\bEAS\b/.test(norm) ||
-    /\bE A S\b/.test(norm) ||
-    norm.includes("SEDIMENTO URINARIO") ||
-    norm.includes("SEDIMENTOSCOPIA") ||
-    norm.includes("SUMARIO DE URINA") ||
-    norm.includes("UROFITA") ||
-    norm.includes("FITA REAGENTE")
-  ) {
-    return { setor: "Urinálise", nomePadrao: "Urina Tipo I (EAS)" };
+export function formatarProntuario(valor: any): string {
+  const limpo = String(valor ?? "").trim().replace(/^['"]+|['"]+$/g, "");
+  if (!limpo) return "";
+  if (/^\d+$/.test(limpo)) {
+    return limpo.padStart(7, "0");
   }
-
-  // 1.1 Proteinúria / Proteinúria Rápida
-  if (norm.includes("PROTEINURIA") || norm.includes("PROTEINA URINARIA")) {
-    return { setor: "Urinálise", nomePadrao: "Proteinúria Rápida" };
-  }
-
-    // 2.5 Grupo Sanguíneo ABO e Fator Rh
-  if (
-    norm.includes("GRUPO ABO") ||
-    norm.includes("GRUPO SANGUINEO") ||
-    norm.includes("FATOR RH") ||
-    norm.includes("TIPAGEM SANGUINEA") ||
-    norm.includes("DETERMINACAO DIRETA E REVERSA DE GRUPO ABO") ||
-    (norm.includes("ABO") && norm.includes("RH"))
-  ) {
-    return { setor: "Tipagem Sanguínea", nomePadrao: "Grupo Sanguíneo ABO e Fator Rh" };
-  }
-
-  // 2. Sangue Oculto (PSO / SOF)
-  if (
-    norm.includes("SANGUE OCULTO") ||
-    /\bPSO\b/.test(norm) ||
-    /\bP S O\b/.test(norm) ||
-    /\bSOF\b/.test(norm) ||
-    /\bS O F\b/.test(norm)
-  ) {
-    return { setor: "Sangue Oculto", nomePadrao: "Pesquisa de Sangue Oculto (PSO)" };
-  }
-
-  // 3. Coagulação (Coagulograma, TP, TTPA, TAP, INR)
-  if (
-    norm.includes("COAGULOGRAMA") ||
-    norm.includes("TEMPO DE PROTROMBINA") ||
-    /\bTAP\b/.test(norm) ||
-    /\bINR\b/.test(norm) ||
-    /\bTP\b/.test(norm) ||
-    /\bTTPA\b/.test(norm) ||
-    /\bKPTT\b/.test(norm) ||
-    norm.includes("TROMBOPLASTINA")
-  ) {
-    return { setor: "Coagulograma", nomePadrao: "Coagulograma (TP/TTPA)" };
-  }
-
-  // 4. VDRL / Sífilis
-  if (
-    norm.includes("VDRL") ||
-    norm.includes("SIFILIS") ||
-    norm.includes("TREPONEMICO")
-  ) {
-    return { setor: "VDRL", nomePadrao: "VDRL / Sífilis" };
-  }
-
-  // 5. Testes Rápidos / Gravidez
-  if (
-    norm.includes("BETA HCG") ||
-    norm.includes("BHCG") ||
-    /\bHCG\b/.test(norm) ||
-    /\bTIG\b/.test(norm) ||
-    norm.includes("GRAVIDEZ")
-  ) {
-    return { setor: "Testes Rápidos", nomePadrao: "Beta-HCG (Gravidez)" };
-  }
-
-  // 6. Provas Inflamatórias
-  if (norm.includes("VHS") || norm.includes("HEMOSSEDIMENTACAO")) {
-    return { setor: "Provas Inflamatórias", nomePadrao: "VHS (Hemossedimentação)" };
-  }
-  if (norm.includes("PCR") || norm.includes("PROTEINA C REATIVA")) {
-    return { setor: "Provas Inflamatórias", nomePadrao: "PCR (Proteína C Reativa)" };
-  }
-  if (norm.includes("ASLO") || norm.includes("ANTIESTREPTOLISINA")) {
-    return { setor: "Provas Inflamatórias", nomePadrao: "ASLO" };
-  }
-  if (norm.includes("FATOR REUMATOIDE") || norm.includes("WAALER ROSE") || /\bFR\b/.test(norm)) {
-    return { setor: "Provas Inflamatórias", nomePadrao: "Fator Reumatoide (FR)" };
-  }
-
-  return null;
-}
-
-export interface ResultadoProcessamentoBancada {
-  pacientesUnificados: RotinaItem[];
-  setorUrinalise: RotinaItem[];
-  setorPso: RotinaItem[];
-  setorCoagulograma: RotinaItem[];
-  setorVdrl: RotinaItem[];
-  setorTestesRapidos: RotinaItem[];
-  setorProvasInflamatorias: RotinaItem[];
-  totalLidos: number;
-  totalDescartadosAutomatizados: number;
-  totalAproveitados: number;
+  return limpo;
 }
 
 /**
- * Processa matriz de linhas (proveniente de Excel, CSV ou PDF),
- * unifica múltiplos exames do mesmo paciente ou os organiza por setores separados.
+ * Identifica se um procedimento/exame do Conecta SUS pertence à BANCADA MANUAL
+ * (Urina I, Proteinúria Tira, Sangue Oculto/PSO, Coagulograma/TP/TTPA, VDRL, PCR, ASLO, FR, VHS, Beta-HCG, Tipagem ABO/Rh)
+ * e descarta automaticamente os exames de Bioquímica/Hematologia/Hormônios/Sorologias automatizadas.
+ */
+export function classificarExameBancada(
+  procedimentoRaw: string,
+  exameRaw: string
+): {
+  ehBancada: boolean;
+  nomeExamePadronizado: string;
+  categoria:
+    | "urina"
+    | "proteinuria_rapida"
+    | "pso"
+    | "coagulograma"
+    | "vdrl"
+    | "pcr"
+    | "aslo"
+    | "fr"
+    | "vhs"
+    | "beta_hcg"
+    | "abo_rh"
+    | "outro_descartado";
+} {
+  const proc = normalizarTexto(procedimentoRaw);
+  const ex = normalizarTexto(exameRaw);
+  const combinado = `${proc} | ${ex}`;
+
+  // 0. Descarte imediato de exames externos ou bioquímicos que mencionam "URINA" (ex: Microalbumina na urina -> ALBUMINA)
+  if (
+    combinado.includes("MICROALBUMINA") ||
+    ex === "ALBUMINA" ||
+    combinado.includes("CLEARANCE") ||
+    combinado.includes("URINA 24") ||
+    combinado.includes("UROCULTURA") ||
+    combinado.includes("CULTURA DE BACTERIAS") ||
+    combinado.includes("SAO JOAO DA B VISTA") ||
+    combinado.includes("ANTI-HIV") ||
+    combinado.includes("ANTI-HCV") ||
+    combinado.includes("HBSAG")
+  ) {
+    return {
+      ehBancada: false,
+      nomeExamePadronizado: exameRaw.trim() || procedimentoRaw.trim(),
+      categoria: "outro_descartado",
+    };
+  }
+
+  // 1. TESTE RÁPIDO DE PROTEINÚRIA (Gestantes / Pré-Natal)
+  if (
+    combinado.includes("TESTE RAPIDO DE PROTEINURIA") ||
+    combinado.includes("PROTEINURIA - TESTE RAPIDO") ||
+    combinado.includes("PROTEINURIA TESTE RAPIDO")
+  ) {
+    return {
+      ehBancada: true,
+      nomeExamePadronizado: "PROTEINÚRIA - TESTE RÁPIDO",
+      categoria: "proteinuria_rapida",
+    };
+  }
+
+  // 2. URINA I / ELEMENTOS ANORMAIS DO SEDIMENTO (EAS)
+  if (
+    ex === "URINA I" ||
+    ex === "URINA 1" ||
+    ex === "EAS" ||
+    combinado.includes("URINA I") ||
+    combinado.includes("ELEMENTOS ANORMAIS DO SEDIMENTO") ||
+    combinado.includes("ANALISE DE CARACTERES FISICOS, ELEMENTOS E SEDIMENTO DA URINA")
+  ) {
+    return {
+      ehBancada: true,
+      nomeExamePadronizado: "URINA I",
+      categoria: "urina",
+    };
+  }
+
+  // 3. PESQUISA DE SANGUE OCULTO NAS FEZES (PSO)
+  if (
+    combinado.includes("SANGUE OCULTO") ||
+    ex === "PSO" ||
+    combinado.includes("PESQUISA DE SANGUE OCULTO NAS FEZES")
+  ) {
+    return {
+      ehBancada: true,
+      nomeExamePadronizado: "SANGUE OCULTO NAS FEZES",
+      categoria: "pso",
+    };
+  }
+
+  // 4. COAGULOGRAMA / TAP / TP / TTPA
+  if (
+    combinado.includes("COAGULOGRAMA") ||
+    combinado.includes("PROTROMBINA") ||
+    combinado.includes("TROMBOPLASTINA") ||
+    ex === "TAP" ||
+    ex === "TP" ||
+    ex === "TTPA" ||
+    ex.includes("TEMPO DE ATIVIDADE DE PROTROMBINA")
+  ) {
+    const padrao = ex.includes("PROTROMBINA") || ex === "TAP" || ex === "TP"
+      ? "TEMPO DE ATIVIDADE DE PROTROMBINA (TAP)"
+      : "COAGULOGRAMA";
+    return {
+      ehBancada: true,
+      nomeExamePadronizado: padrao,
+      categoria: "coagulograma",
+    };
+  }
+
+  // 5. PCR (PROTEÍNA C REATIVA)
+  if (
+    combinado.includes("PROTEINA C REATIVA") ||
+    ex === "PCR" ||
+    ex.startsWith("PCR ") ||
+    ex.startsWith("PCR-")
+  ) {
+    return {
+      ehBancada: true,
+      nomeExamePadronizado: "PCR - PROTEÍNA C REATIVA",
+      categoria: "pcr",
+    };
+  }
+
+  // 6. ASLO (ANTIESTREPTOLISINA-O)
+  if (
+    combinado.includes("ANTIESTREPTOLISINA") ||
+    ex === "ASLO" ||
+    ex === "AEO" ||
+    ex.includes("(ASLO)")
+  ) {
+    return {
+      ehBancada: true,
+      nomeExamePadronizado: "ANTIESTREPTOLISINA-O (ASLO)",
+      categoria: "aslo",
+    };
+  }
+
+  // 7. VHS (VELOCIDADE DE HEMOSSEDIMENTAÇÃO)
+  if (
+    combinado.includes("HEMOSSEDIMENTACAO") ||
+    ex === "VHS" ||
+    ex.startsWith("VHS ")
+  ) {
+    return {
+      ehBancada: true,
+      nomeExamePadronizado: "VHS (VELOCIDADE DE HEMOSSEDIMENTAÇÃO)",
+      categoria: "vhs",
+    };
+  }
+
+  // 8. VDRL / SÍFILIS (BANCADA)
+  if (
+    combinado.includes("VDRL") ||
+    combinado.includes("SIFILIS") ||
+    combinado.includes("TREPONEMA")
+  ) {
+    return {
+      ehBancada: true,
+      nomeExamePadronizado: "VDRL",
+      categoria: "vdrl",
+    };
+  }
+
+  // 9. TIPAGEM SANGUÍNEA ABO / FATOR RH
+  if (
+    combinado.includes("ABO") ||
+    combinado.includes("FATOR RH") ||
+    combinado.includes("GRUPO SANGUINEO") ||
+    combinado.includes("TIPAGEM SANGUINEA") ||
+    combinado.includes("FENOTIPAGEM")
+  ) {
+    return {
+      ehBancada: true,
+      nomeExamePadronizado: "GRUPO SANGUÍNEO ABO E FATOR RH",
+      categoria: "abo_rh",
+    };
+  }
+
+  // 10. BETA-HCG / TIG
+  if (
+    combinado.includes("GONADOTROFINA") ||
+    combinado.includes("BETA HCG") ||
+    combinado.includes("BETA-HCG") ||
+    ex === "TIG" ||
+    combinado.includes("GRAVIDEZ")
+  ) {
+    return {
+      ehBancada: true,
+      nomeExamePadronizado: "BETA-HCG",
+      categoria: "beta_hcg",
+    };
+  }
+
+  // 11. FATOR REUMATOIDE (FR / LÁTEX)
+  if (
+    combinado.includes("FATOR REUMATOIDE") ||
+    ex === "FR" ||
+    ex === "LATEX"
+  ) {
+    return {
+      ehBancada: true,
+      nomeExamePadronizado: "FATOR REUMATOIDE (FR)",
+      categoria: "fr",
+    };
+  }
+
+  return {
+    ehBancada: false,
+    nomeExamePadronizado: exameRaw.trim() || procedimentoRaw.trim(),
+    categoria: "outro_descartado",
+  };
+}
+
+/**
+ * Reconstrói as flags booleanas (tem_urina, tem_pso, tem_abo_rh, etc.) a partir da string de exames
+ * salva no Google Sheets ou em memória.
+ */
+export function aplicarFlagsExamesNoItem(item: ItemRotina): ItemRotina {
+  const partes = (item.exame || "URINA I")
+    .split(/\s*\+\s*|\s*,\s*|\s*;\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  let tem_urina = Boolean(item.tem_urina);
+  let tem_pso = Boolean(item.tem_pso);
+  let tem_coagulograma = Boolean(item.tem_coagulograma);
+  let tem_vdrl = Boolean(item.tem_vdrl);
+  let tem_beta_hcg = Boolean(item.tem_beta_hcg);
+  let tem_vhs = Boolean(item.tem_vhs);
+  let tem_pcr = Boolean(item.tem_pcr);
+  let tem_aslo = Boolean(item.tem_aslo);
+  let tem_fr = Boolean(item.tem_fr);
+  let tem_proteinuria_rapida = Boolean(item.tem_proteinuria_rapida);
+  let tem_abo_rh = Boolean(item.tem_abo_rh);
+
+  for (const parte of partes) {
+    const c = classificarExameBancada(parte, parte);
+    if (c.categoria === "urina") tem_urina = true;
+    if (c.categoria === "proteinuria_rapida") tem_proteinuria_rapida = true;
+    if (c.categoria === "pso") tem_pso = true;
+    if (c.categoria === "coagulograma") tem_coagulograma = true;
+    if (c.categoria === "vdrl") tem_vdrl = true;
+    if (c.categoria === "beta_hcg") tem_beta_hcg = true;
+    if (c.categoria === "vhs") tem_vhs = true;
+    if (c.categoria === "pcr") tem_pcr = true;
+    if (c.categoria === "aslo") tem_aslo = true;
+    if (c.categoria === "fr") tem_fr = true;
+    if (c.categoria === "abo_rh") tem_abo_rh = true;
+  }
+
+  return {
+    ...item,
+    data: item.data || item.data_rotina || new Date().toISOString().split("T")[0],
+    data_rotina: item.data_rotina || item.data || new Date().toISOString().split("T")[0],
+    status_coleta: item.status_coleta || "REALIZADO",
+    prontuario: formatarProntuario(item.prontuario),
+    tem_urina,
+    tem_pso,
+    tem_coagulograma,
+    tem_vdrl,
+    tem_beta_hcg,
+    tem_vhs,
+    tem_pcr,
+    tem_aslo,
+    tem_fr,
+    tem_proteinuria_rapida,
+    tem_abo_rh,
+  };
+}
+
+/**
+ * Processa uma matriz de linhas (vinda de CSV, XLSX ou texto colado) do relatório Conecta SUS
+ * ou de uma planilha de Bancada já formatada (`Exame,Paciente,Prontuário,Resultado`),
+ * e gera tanto a lista da Tiragem (`Bancada 15/10`) quanto os pacientes unificados para o app,
+ * ordenados alfabeticamente por nome para que a ordem da Urina (1, 2, 3, 4, 5, 6...) seja idêntica
+ * na folha impressa e no celular.
  */
 export function processarMatrizLinhasBancada(
   rows: any[][],
   filtrarApenasRealizado: boolean = false
-): ResultadoProcessamentoBancada {
-  if (!rows || rows.length <= 1) {
-    return {
-      pacientesUnificados: [],
-      setorUrinalise: [],
-      setorPso: [],
-      setorCoagulograma: [],
-      setorVdrl: [],
-      setorTestesRapidos: [],
-      setorProvasInflamatorias: [],
-      totalLidos: 0,
-      totalDescartadosAutomatizados: 0,
-      totalAproveitados: 0,
-    };
-  }
+): ResultadoExtracaoBancada {
+  let idxData = -1;
+  let idxNome = -1;
+  let idxPront = -1;
+  let idxProcedimento = -1;
+  let idxExame = -1;
+  let idxStatus = -1;
+  let linhaCabecalho = -1;
 
-  // Identificação flexível de colunas pelo cabeçalho (ou primeiras 5 linhas)
-  let linhaCabecalho = 0;
-  let headers = (rows[0] || []).map((h: any) => normalizarTexto(h));
+  // 1. Localizar a linha real de cabeçalho da tabela (ignorando linhas de filtro com ":" como "Período:,Exame:" ou "Paciente:,Prontuário:")
+  for (let r = 0; r < Math.min(rows.length, 30); r++) {
+    const rawCells = (rows[r] || []).map((c: any) => String(c ?? "").trim());
+    const normCells = rawCells.map((c) => normalizarTexto(c));
 
-  let idxPront = headers.findIndex((h) => h.includes("PRONT") || h.includes("COD") || h.includes("AMOSTRA") || h.includes("CNS"));
-  let idxNome = headers.findIndex((h) => h.includes("NOME") || h.includes("PACIENTE") || h.includes("USUARIO"));
-  let idxExame = headers.findIndex((h) => h.includes("EXAME") || h.includes("PROCEDIMENTO") || h.includes("DESCRICAO") || h.includes("SOLICITACAO"));
-  let idxData = headers.findIndex((h) => h.includes("DATA") || h.includes("DT") || h.includes("COLETA") || h.includes("AGENDAMENTO"));
-  let idxIdade = headers.findIndex((h) => h.includes("IDADE") || h.includes("SEXO") || h.includes("NASC"));
-  let idxStatus = headers.findIndex((h) => h.includes("STATUS") || h.includes("SITUACAO") || h.includes("COLETA"));
-
-  // Se não achou na linha 0, varre até linha 8 (comum em relatórios do SUS com cabeçalho de prefeitura)
-  if (idxNome === -1 && idxExame === -1) {
-    for (let r = 1; r < Math.min(10, rows.length); r++) {
-      const rowNorm = (rows[r] || []).map((h: any) => normalizarTexto(h));
-      const testNome = rowNorm.findIndex((h) => h.includes("NOME") || h.includes("PACIENTE"));
-      const testExame = rowNorm.findIndex((h) => h.includes("EXAME") || h.includes("PROCEDIMENTO"));
-      if (testNome !== -1 || testExame !== -1) {
-        linhaCabecalho = r;
-        headers = rowNorm;
-        idxPront = rowNorm.findIndex((h) => h.includes("PRONT") || h.includes("COD") || h.includes("AMOSTRA") || h.includes("CNS"));
-        idxNome = testNome;
-        idxExame = testExame;
-        idxData = rowNorm.findIndex((h) => h.includes("DATA") || h.includes("DT"));
-        idxIdade = rowNorm.findIndex((h) => h.includes("IDADE") || h.includes("SEXO"));
-        idxStatus = rowNorm.findIndex((h) => h.includes("STATUS") || h.includes("SITUACAO"));
-        break;
-      }
-    }
-  }
-
-  // Fallback padrão se não encontrou colunas nomeadas
-  if (idxPront === -1) idxPront = 0;
-  if (idxNome === -1) idxNome = 1;
-  if (idxExame === -1) idxExame = 2;
-
-  const hoje = new Date().toISOString().split("T")[0];
-  let totalLidos = 0;
-  let totalDescartadosAutomatizados = 0;
-
-  // Mapa de unificação por paciente (chave = prontuário limpo ou nome limpo)
-  const mapaPacientes = new Map<string, RotinaItem>();
-
-  for (let i = linhaCabecalho + 1; i < rows.length; i++) {
-    const row = rows[i];
-    if (!row || row.length === 0) continue;
-
-    const prontuario = (row[idxPront] || "").toString().trim();
-    const nome = (row[idxNome] || "").toString().trim();
-    const exameRaw = (row[idxExame] || "").toString().trim();
-    const dataRaw = idxData >= 0 ? (row[idxData] || "").toString().trim() : hoje;
-    const idadeSexo = idxIdade >= 0 ? (row[idxIdade] || "").toString().trim() : "";
-    const statusRaw = idxStatus >= 0 ? (row[idxStatus] || "REALIZADO").toString().trim() : "REALIZADO";
-
-    if (!nome) continue;
-    const nomeNorm = normalizarTexto(nome);
-    if (["NOME", "PACIENTE", "NOME DO PACIENTE", "USUARIO", "TOTAL"].includes(nomeNorm)) continue;
-
-    totalLidos++;
-
-    // Verifica se status é realizado/coletado quando filtro estiver ativo
-    if (filtrarApenasRealizado) {
-      const statusNorm = normalizarTexto(statusRaw);
-      const ehRealizado =
-        statusNorm.includes("REALIZ") ||
-        statusNorm.includes("COLET") ||
-        statusNorm.includes("TRIAG") ||
-        statusNorm.includes("RECEB") ||
-        statusNorm.includes("OK") ||
-        statusNorm.includes("SIM");
-      if (!ehRealizado) continue;
-    }
-
-    // Dividir possíveis múltiplos exames na mesma célula (ex: "Urina I, VDRL, Hemograma")
-    const partesExames = exameRaw.split(/[,;\n\r\+/|]+/).map((p: string) => p.trim()).filter(Boolean);
-    const examesBancadaDetectados: ExameClassificado[] = [];
-
-    for (const parte of partesExames) {
-      const classificado = classificarExameBancada(parte);
-      if (classificado) {
-        if (!examesBancadaDetectados.some((e) => e.nomePadrao === classificado.nomePadrao)) {
-          examesBancadaDetectados.push(classificado);
-        }
-      } else {
-        totalDescartadosAutomatizados++;
-      }
-    }
-
-    // Se nenhum exame da linha pertencer à bancada (ex: paciente só tinha glicose ou hemograma), descarta!
-    if (examesBancadaDetectados.length === 0) {
+    // Ignorar linhas de metadados onde as células terminam com ":" (ex: "Período:", "Exame:", "Paciente:", "Prontuário:")
+    const célulasNãoVazias = rawCells.filter(Boolean);
+    if (célulasNãoVazias.length === 0) continue;
+    const qtdComDoisPontos = célulasNãoVazias.filter((c) => c.endsWith(":")).length;
+    if (qtdComDoisPontos >= 1 && célulasNãoVazias.length <= 4) {
       continue;
     }
 
-    // Chave única para consolidar o mesmo paciente que veio em múltiplas linhas
-    const chaveUnica = (prontuario || nomeNorm).toLowerCase();
-    let paciente = mapaPacientes.get(chaveUnica);
+    const posPaciente = normCells.findIndex(
+      (h) =>
+        (h === "PACIENTE" || h === "NOME" || h === "NOME PACIENTE" || h === "NOME DO PACIENTE" || h === "USUARIO") &&
+        !h.endsWith(":")
+    );
+    const posProntuario = normCells.findIndex(
+      (h) =>
+        (h === "PRONTUARIO" || h === "CODIGO" || h === "MATRICULA" || h === "CNS") &&
+        !h.endsWith(":")
+    );
+    // Nunca confundir "CÓDIGO PROCEDIMENTO" com o nome do Procedimento/Exame!
+    const posExameExato = normCells.findIndex(
+      (h) => (h === "EXAME" || h === "EXAMES") && !h.endsWith(":")
+    );
+    const posProcedimento = normCells.findIndex(
+      (h) =>
+        (h === "PROCEDIMENTO" || h === "DESCRICAO DO PROCEDIMENTO") &&
+        !h.includes("CODIGO") &&
+        !h.endsWith(":")
+    );
 
-    if (!paciente) {
-      paciente = {
-        id: `rot-${prontuario || i}-${Date.now().toString().slice(-4)}`,
-        data: dataRaw || hoje,
-        prontuario: prontuario || String(i),
-        nome_paciente: nome,
-        idade_sexo: idadeSexo || "Adulto",
-        posto_unidade: "",
-        solicitante: "",
-        exame: "",
-        status_coleta: statusRaw || "REALIZADO",
-        status_laudo: "rascunho",
-        tem_laudo: false,
-        exames_bancada: [],
-      };
-      mapaPacientes.set(chaveUnica, paciente);
+    if (posPaciente !== -1 && (posExameExato !== -1 || posProcedimento !== -1 || posProntuario !== -1)) {
+      linhaCabecalho = r;
+      idxNome = posPaciente;
+      idxPront = posProntuario;
+      idxExame = posExameExato !== -1 ? posExameExato : posProcedimento;
+      idxProcedimento = posProcedimento !== -1 ? posProcedimento : posExameExato;
+      idxData = normCells.findIndex((h) => h.includes("DATA"));
+      idxStatus = normCells.findIndex(
+        (h) => (h.includes("STATUS") || h.includes("SITUACAO")) && !h.includes("DATA")
+      );
+      break;
     }
-
-    // Marcar as flags de bancada correspondentes
-    for (const ex of examesBancadaDetectados) {
-      if (!paciente.exames_bancada?.includes(ex.nomePadrao)) {
-        paciente.exames_bancada?.push(ex.nomePadrao);
-      }
-
-      if (ex.setor === "Urinálise") {
-        if (ex.nomePadrao === "Proteinúria Rápida") {
-          paciente.tem_proteinuria_rapida = true;
-        } else {
-          paciente.tem_urina = true;
-        }
-      } else if (ex.setor === "Tipagem Sanguínea") {
-        paciente.tem_abo_rh = true;
-      } else if (ex.setor === "Sangue Oculto") {
-        paciente.tem_pso = true;
-      } else if (ex.setor === "Coagulograma") {
-        paciente.tem_coagulograma = true;
-      } else if (ex.setor === "VDRL") {
-        paciente.tem_vdrl = true;
-      } else if (ex.setor === "Testes Rápidos") {
-        paciente.tem_beta_hcg = true;
-      } else if (ex.setor === "Provas Inflamatórias") {
-        if (ex.nomePadrao.includes("VHS")) paciente.tem_vhs = true;
-        if (ex.nomePadrao.includes("PCR")) paciente.tem_pcr = true;
-        if (ex.nomePadrao.includes("ASLO")) paciente.tem_aslo = true;
-        if (ex.nomePadrao.includes("Fator")) paciente.tem_fr = true;
-      }
-    }
-
-    paciente.exame = (paciente.exames_bancada || []).join(" + ");
   }
 
-  const pacientesUnificados = Array.from(mapaPacientes.values());
+  // Fallback caso o arquivo não tenha cabeçalho explícito (assume formato padrão Conecta SUS de 6 colunas)
+  if (linhaCabecalho === -1) {
+    idxData = 0;
+    idxNome = 1;
+    idxPront = 2;
+    idxProcedimento = 4;
+    idxExame = 5;
+  }
 
-  // Gerar listas especializadas e separadinhas por setor
-  const setorUrinalise = pacientesUnificados.filter((p) => p.tem_urina || p.tem_proteinuria_rapida);
-  const setorPso = pacientesUnificados.filter((p) => p.tem_pso);
-  const setorCoagulograma = pacientesUnificados.filter((p) => p.tem_coagulograma);
-  const setorVdrl = pacientesUnificados.filter((p) => p.tem_vdrl);
-  const setorTestesRapidos = pacientesUnificados.filter((p) => p.tem_beta_hcg);
-  const setorProvasInflamatorias = pacientesUnificados.filter((p) => p.tem_vhs || p.tem_pcr || p.tem_aslo || p.tem_fr);
+  let dataReferencia = new Date().toISOString().split("T")[0];
+  let totalLinhasBrutas = 0;
+  let totalExamesBancada = 0;
+  let totalDescartadosBioquimica = 0;
+
+  const linhasRelatorioBancada: LinhaRelatorioBancada[] = [];
+  const mapaPacientes = new Map<
+    string,
+    {
+      item: ItemRotina;
+      examesSet: Set<string>;
+    }
+  >();
+
+  const startRow = linhaCabecalho !== -1 ? linhaCabecalho + 1 : 0;
+
+  for (let i = startRow; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.length === 0) continue;
+
+    const nomeRaw = idxNome !== -1 ? String(row[idxNome] ?? "").trim() : "";
+    const prontRaw = idxPront !== -1 ? formatarProntuario(row[idxPront]) : "";
+    const procRaw = idxProcedimento !== -1 ? String(row[idxProcedimento] ?? "").trim() : "";
+    const exameRaw =
+      idxExame !== -1 && row[idxExame] !== undefined && String(row[idxExame]).trim() !== ""
+        ? String(row[idxExame]).trim()
+        : procRaw;
+    const dataRaw = idxData !== -1 ? String(row[idxData] ?? "").trim() : "";
+
+    // Ignorar linhas vazias, cabeçalhos repetidos ou rodapés
+    const nomeNorm = normalizarTexto(nomeRaw);
+    if (
+      !nomeRaw ||
+      nomeRaw.length < 3 ||
+      nomeNorm === "PACIENTE" ||
+      nomeNorm.startsWith("PACIENTE:") ||
+      nomeNorm.startsWith("RELATORIO") ||
+      nomeNorm.startsWith("PERIODO:") ||
+      nomeNorm.startsWith("TOTAL") ||
+      nomeNorm.startsWith("FILTROS")
+    ) {
+      continue;
+    }
+
+    if (!exameRaw && !procRaw) continue;
+
+    // Filtro opcional de status (apenas se existir coluna real de Status/Situação, nunca Data coleta)
+    if (filtrarApenasRealizado && idxStatus !== -1) {
+      const statusVal = normalizarTexto(String(row[idxStatus] ?? ""));
+      if (
+        statusVal &&
+        !statusVal.includes("REALIZ") &&
+        !statusVal.includes("COLET") &&
+        !statusVal.includes("RECEB") &&
+        !statusVal.includes("CONCLU") &&
+        !statusVal.includes("ATEND")
+      ) {
+        continue;
+      }
+    }
+
+    // Extrair data de referência (DD/MM/YYYY -> YYYY-MM-DD)
+    if (dataRaw) {
+      const matchData = dataRaw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+      if (matchData) {
+        dataReferencia = `${matchData[3]}-${matchData[2]}-${matchData[1]}`;
+      } else if (/^\d{4}-\d{2}-\d{2}/.test(dataRaw)) {
+        dataReferencia = dataRaw.substring(0, 10);
+      }
+    }
+
+    totalLinhasBrutas++;
+
+    const classificacao = classificarExameBancada(procRaw, exameRaw);
+
+    if (!classificacao.ehBancada) {
+      totalDescartadosBioquimica++;
+      continue;
+    }
+
+    totalExamesBancada++;
+
+    const prontuarioFinal = prontRaw || `S/P-${totalExamesBancada}`;
+    const nomePacienteLimpo = nomeRaw.toUpperCase().trim();
+
+    // Adicionar linha para a Tiragem (estilo Bancada 15/10), evitando duplicar o mesmo exame para o mesmo paciente
+    const jaTemLinhaExame = linhasRelatorioBancada.some(
+      (l) =>
+        l.prontuario === prontuarioFinal &&
+        l.paciente === nomePacienteLimpo &&
+        l.exame === classificacao.nomeExamePadronizado
+    );
+
+    if (!jaTemLinhaExame) {
+      linhasRelatorioBancada.push({
+        exame: classificacao.nomeExamePadronizado,
+        paciente: nomePacienteLimpo,
+        prontuario: prontuarioFinal,
+        resultado: "",
+      });
+    }
+
+    // Unificar paciente para o app de bancada (1 registro por paciente com todas as flags dos seus exames)
+    const chavePaciente = `${prontuarioFinal}_${nomePacienteLimpo}`;
+
+    if (!mapaPacientes.has(chavePaciente)) {
+      mapaPacientes.set(chavePaciente, {
+        item: {
+          id: `rot-${dataReferencia}-${prontuarioFinal}`,
+          data: dataReferencia,
+          data_rotina: dataReferencia,
+          status_coleta: "REALIZADO",
+          prontuario: prontuarioFinal,
+          nome_paciente: nomePacienteLimpo,
+          idade_sexo: "SUS",
+          posto_unidade: "Conecta SUS",
+          solicitante: "Conecta SUS",
+          exame: classificacao.nomeExamePadronizado,
+          tem_laudo: false,
+          tem_urina: false,
+          tem_pso: false,
+          tem_coagulograma: false,
+          tem_vdrl: false,
+          tem_beta_hcg: false,
+          tem_vhs: false,
+          tem_pcr: false,
+          tem_aslo: false,
+          tem_fr: false,
+          tem_proteinuria_rapida: false,
+          tem_abo_rh: false,
+        },
+        examesSet: new Set<string>(),
+      });
+    }
+
+    const registro = mapaPacientes.get(chavePaciente)!;
+    registro.examesSet.add(classificacao.nomeExamePadronizado);
+
+    if (classificacao.categoria === "urina") registro.item.tem_urina = true;
+    if (classificacao.categoria === "proteinuria_rapida")
+      registro.item.tem_proteinuria_rapida = true;
+    if (classificacao.categoria === "pso") registro.item.tem_pso = true;
+    if (classificacao.categoria === "coagulograma")
+      registro.item.tem_coagulograma = true;
+    if (classificacao.categoria === "vdrl") registro.item.tem_vdrl = true;
+    if (classificacao.categoria === "pcr") registro.item.tem_pcr = true;
+    if (classificacao.categoria === "aslo") registro.item.tem_aslo = true;
+    if (classificacao.categoria === "fr") registro.item.tem_fr = true;
+    if (classificacao.categoria === "vhs") registro.item.tem_vhs = true;
+    if (classificacao.categoria === "beta_hcg") registro.item.tem_beta_hcg = true;
+    if (classificacao.categoria === "abo_rh") registro.item.tem_abo_rh = true;
+
+    registro.item.exame = Array.from(registro.examesSet).join(" + ");
+  }
+
+  // Ordenar as linhas da Tiragem exatamente como na "Bancada 15/10":
+  // 1º por Nome do Exame (A-Z), 2º por Nome do Paciente (A-Z)
+  linhasRelatorioBancada.sort((a, b) => {
+    const cmpExame = a.exame.localeCompare(b.exame, "pt-BR");
+    if (cmpExame !== 0) return cmpExame;
+    return a.paciente.localeCompare(b.paciente, "pt-BR");
+  });
+
+  // Ordenar os pacientes unificados por Nome do Paciente (A-Z)
+  // Assim a fila da Urina I no celular (1, 2, 3, 4, 5, 6...) fica na EXATA mesma ordem da Tiragem impressa!
+  const pacientesUnificados = Array.from(mapaPacientes.values())
+    .map((v) => v.item)
+    .sort((a, b) => a.nome_paciente.localeCompare(b.nome_paciente, "pt-BR"));
 
   return {
-    pacientesUnificados,
-    setorUrinalise,
-    setorPso,
-    setorCoagulograma,
-    setorVdrl,
-    setorTestesRapidos,
-    setorProvasInflamatorias,
-    totalLidos,
-    totalDescartadosAutomatizados,
+    dataReferencia,
+    totalLinhasBrutas,
+    totalExamesBancada,
+    totalDescartadosBioquimica,
+    totalLidos: totalLinhasBrutas,
     totalAproveitados: pacientesUnificados.length,
+    totalDescartadosAutomatizados: totalDescartadosBioquimica,
+    linhasRelatorioBancada,
+    pacientesUnificados,
   };
 }

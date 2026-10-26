@@ -1,155 +1,203 @@
 "use client";
 
 import React from "react";
-import { RotinaItem, LabConfig, DEFAULT_LAB_CONFIG } from "@/types/urinalise";
+import { ItemRotina, LaudoUrina } from "@/lib/googleSheets";
+import { formatarProntuario } from "@/lib/extratorBancada";
 
 interface MapaBancadaPrintViewProps {
-  pacientes: RotinaItem[];
-  dataRotina: string;
-  labConfig?: LabConfig;
-  modoTiragem?: "lista_exames" | "mapa_tubos";
+  pacientes: ItemRotina[];
+  laudos?: LaudoUrina[];
+  dataRotina?: string;
+  labConfig?: any;
+}
+
+interface LinhaBancadaIndividual {
+  numeroNoGrupo: number;
+  exame: string;
+  paciente: string;
+  prontuario: string;
+  resultado: string;
 }
 
 export const MapaBancadaPrintView: React.FC<MapaBancadaPrintViewProps> = ({
   pacientes,
+  laudos = [],
   dataRotina,
-  labConfig = DEFAULT_LAB_CONFIG,
-  modoTiragem = "lista_exames",
 }) => {
-  const dataFormatada = (() => {
-    try {
-      const [ano, mes, dia] = dataRotina.split("-");
-      return `${dia}/${mes}/${ano}`;
-    } catch {
-      return dataRotina;
-    }
-  })();
+  const dataFormatada = dataRotina
+    ? dataRotina.split("-").reverse().join("/")
+    : new Date().toLocaleDateString("pt-BR");
 
-  // Expandir pacientes em linhas individuais por Exame (idêntico à planilha do laboratório)
-  const itensPorExame: { exame: string; paciente: string; prontuario: string }[] = [];
+  // Mapa rápido de laudos por prontuário para preencher a coluna Resultado caso já tenha sido contado no celular
+  const mapaLaudos = new Map<string, LaudoUrina>();
+  laudos.forEach((l) => {
+    mapaLaudos.set(formatarProntuario(l.prontuario), l);
+  });
 
-  for (const p of pacientes) {
-    const examesLista: string[] = [];
+  const obterResumoResultado = (prontuario: string, exameUpper: string): string => {
+    const l = mapaLaudos.get(formatarProntuario(prontuario));
+    if (!l) return "";
 
-    if (p.tem_urina || p.exame?.toUpperCase().includes("URINA") || p.exame?.toUpperCase().includes("EAS")) {
-      examesLista.push("URINA I");
+    if (exameUpper.includes("PROTEINÚRIA") || exameUpper.includes("PROTEINURIA")) {
+      return l.resultado_proteinuria_rapida || l.proteina || "";
     }
-    if (p.tem_pso || p.exame?.toUpperCase().includes("PSO") || p.exame?.toUpperCase().includes("SANGUE OCULTO")) {
-      examesLista.push("SANGUE OCULTO NAS FEZES");
+    if (exameUpper.includes("URINA") || exameUpper.includes("EAS")) {
+      return `VOL:${l.volume || "60mL"} D:${l.densidade} pH:${l.ph} Leu:${l.leucocitos_campo} Hem:${l.hemacias_campo}`;
     }
-    if (p.tem_coagulograma || p.exame?.toUpperCase().includes("COAGULO") || p.exame?.toUpperCase().includes("TAP")) {
-      examesLista.push("COAGULOGRAMA");
+    if (exameUpper.includes("SANGUE OCULTO") || exameUpper.includes("PSO")) {
+      return l.resultado_pso || "";
     }
-    if (p.tem_abo_rh || p.exame?.toUpperCase().includes("ABO") || p.exame?.toUpperCase().includes("GRUPO") || p.exame?.toUpperCase().includes("RH")) {
-      examesLista.push("GRUPO SANGUÍNEO E FATOR RH");
+    if (exameUpper.includes("ABO") || exameUpper.includes("FATOR RH") || exameUpper.includes("GRUPO SANGU")) {
+      return l.resultado_abo_rh || "";
     }
-    if (p.tem_vdrl || p.exame?.toUpperCase().includes("VDRL") || p.exame?.toUpperCase().includes("SIFILIS")) {
-      examesLista.push("VDRL");
+    if (exameUpper.includes("COAGULOGRAMA") || exameUpper.includes("PROTROMBINA") || exameUpper.includes("TAP")) {
+      return [
+        l.tp_tempo ? `TP: ${l.tp_tempo}` : "",
+        l.tp_inr ? `INR: ${l.tp_inr}` : "",
+        l.ttpa_tempo ? `TTPA: ${l.ttpa_tempo}` : "",
+      ]
+        .filter(Boolean)
+        .join(" | ");
     }
-    if (p.tem_beta_hcg || p.exame?.toUpperCase().includes("BETA") || p.exame?.toUpperCase().includes("HCG")) {
-      examesLista.push("TESTE RÁPIDO DE GRAVIDEZ (BETA-HCG)");
-    }
-    if (p.tem_proteinuria_rapida || p.exame?.toUpperCase().includes("PROTEINURIA")) {
-      examesLista.push("PROTEINÚRIA - TESTE RÁPIDO");
-    }
-    if (p.tem_vhs || p.exame?.toUpperCase().includes("VHS")) {
-      examesLista.push("VHS (VELOCIDADE DE HEMOSSEDIMENTAÇÃO)");
-    }
-    if (p.tem_pcr || p.exame?.toUpperCase().includes("PCR")) {
-      examesLista.push("PCR - PROTEÍNA C REATIVA");
-    }
-    if (p.tem_aslo || p.exame?.toUpperCase().includes("ASLO")) {
-      examesLista.push("ANTIESTREPTOLISINA-O (ASLO)");
-    }
-    if (p.tem_fr || p.exame?.toUpperCase().includes("FATOR") || p.exame?.toUpperCase().includes("LATEX")) {
-      examesLista.push("FATOR REUMATOIDE (LATEX)");
-    }
+    if (exameUpper.includes("PCR")) return l.resultado_pcr || "";
+    if (exameUpper.includes("ASLO")) return l.resultado_aslo || "";
+    if (exameUpper.includes("FR") || exameUpper.includes("REUMATOIDE")) return l.resultado_fr || "";
+    if (exameUpper.includes("VDRL")) return l.resultado_vdrl || "";
+    if (exameUpper.includes("VHS") || exameUpper.includes("HEMOSSEDIMENTA")) return l.resultado_vhs || "";
+    if (exameUpper.includes("BETA") || exameUpper.includes("HCG")) return l.resultado_beta_hcg || "";
+    return "";
+  };
 
-    if (examesLista.length === 0) {
-      examesLista.push(p.exame || "URINA I");
-    }
+  // Expandir os pacientes nas linhas exatas de cada exame (padrão "Bancada 15/10")
+  const linhasBrutas: Omit<LinhaBancadaIndividual, "numeroNoGrupo">[] = [];
 
-    for (const ex of examesLista) {
-      itensPorExame.push({
-        exame: ex,
-        paciente: p.nome_paciente,
-        prontuario: p.prontuario,
+  pacientes.forEach((p) => {
+    const listaExames = (p.exame || "URINA I")
+      .split(/\s*\+\s*|\s*,\s*|\s*;\s*/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const pront = formatarProntuario(p.prontuario);
+    const nome = (p.nome_paciente || "").toUpperCase().trim();
+
+    if (listaExames.length === 0) {
+      linhasBrutas.push({
+        exame: "URINA I",
+        paciente: nome,
+        prontuario: pront,
+        resultado: obterResumoResultado(pront, "URINA I"),
+      });
+    } else {
+      listaExames.forEach((ex) => {
+        const exUpper = ex.toUpperCase();
+        const jaExiste = linhasBrutas.some(
+          (item) =>
+            item.prontuario === pront &&
+            item.paciente === nome &&
+            item.exame === exUpper
+        );
+        if (!jaExiste) {
+          linhasBrutas.push({
+            exame: exUpper,
+            paciente: nome,
+            prontuario: pront,
+            resultado: obterResumoResultado(pront, exUpper),
+          });
+        }
       });
     }
-  }
+  });
 
-  // Ordenar alfabeticamente por Exame e depois por Paciente (como no Excel)
-  itensPorExame.sort((a, b) => {
-    if (a.exame === b.exame) {
-      return a.paciente.localeCompare(b.paciente);
-    }
-    return a.exame.localeCompare(b.exame);
+  // Ordenar: 1º por Exame (A-Z), 2º por Paciente (A-Z) -> Exatamente igual à "Bancada 15/10"
+  linhasBrutas.sort((a, b) => {
+    const cmpExame = a.exame.localeCompare(b.exame, "pt-BR");
+    if (cmpExame !== 0) return cmpExame;
+    return a.paciente.localeCompare(b.paciente, "pt-BR");
+  });
+
+  // Numerar sequencialmente dentro de cada tipo de exame (ex: URINA I: 1, 2, 3, 4, 5, 6...)
+  // Assim o número na folha impressa bate 100% com o número do tubo no celular!
+  const contadoresPorExame: Record<string, number> = {};
+  const itensPorExame: LinhaBancadaIndividual[] = linhasBrutas.map((item) => {
+    contadoresPorExame[item.exame] = (contadoresPorExame[item.exame] || 0) + 1;
+    return {
+      ...item,
+      numeroNoGrupo: contadoresPorExame[item.exame],
+    };
   });
 
   return (
-    <div
-      className="bg-white text-black text-xs font-sans p-6 print:p-0 print:m-0 print:w-full"
-      style={{ fontFamily: "'Helvetica Neue', Arial, sans-serif" }}
-    >
-      {/* CABEÇALHO DA TIRAGEM DO DIA */}
-      <div className="border-b-2 border-black pb-2 mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 border-2 border-black flex flex-col items-center justify-center font-black leading-none text-center">
-            <span className="text-[11px]">SUS</span>
-            <span className="text-[6px]">LAB</span>
-          </div>
-          <div>
-            <h1 className="text-sm font-black uppercase tracking-tight">
-              {labConfig.nomeInstituicao} - {labConfig.nomeLaboratorio}
-            </h1>
-            <p className="text-[10px] font-bold text-slate-800 uppercase">
-              TIRAGEM DO DIA - EXAMES DE BANCADA
-            </p>
-          </div>
+    <div className="print:block bg-white text-black font-sans w-full max-w-[210mm] mx-auto p-2 print:p-0">
+      {/* CABEÇALHO SIMPLES E DIRETO (PADRÃO TIRAGEM DE BANCADA) */}
+      <div className="flex items-center justify-between border-b-2 border-black pb-2 mb-3">
+        <div>
+          <h1 className="text-base font-black uppercase tracking-tight">
+            TIRAGEM DE BANCADA — RELAÇÃO DE EXAMES DO DIA ({dataFormatada})
+          </h1>
+          <p className="text-[10.5px] font-medium text-neutral-700">
+            Ordem alfabética por Exame e Paciente (numeração #1, #2, #3... idêntica à fila do celular)
+          </p>
         </div>
-
-        <div className="text-right text-[10px]">
-          <p className="font-bold">Data: {dataFormatada}</p>
-          <p className="text-slate-600">Total: {itensPorExame.length} exames a realizar ({pacientes.length} pacientes)</p>
+        <div className="text-right text-xs font-bold">
+          <span>Total de Exames: {itensPorExame.length}</span>
+          <span className="block text-[10px] font-normal text-neutral-600">
+            Pacientes: {pacientes.length}
+          </span>
         </div>
       </div>
 
-      {/* TABELA ESTILO PLANILHA DO LABORATÓRIO (EXAME | PACIENTE | PRONTUÁRIO | RESULTADO) */}
-      <table className="w-full border-collapse border border-black text-[10px]">
+      {/* TABELA IDÊNTICA À PLANILHA "Bancada 15/10": Nº | Exame | Paciente | Prontuário | Resultado */}
+      <table className="w-full border-collapse border border-black text-[11px]">
         <thead>
-          <tr className="bg-slate-200 border-b border-black text-black font-black uppercase text-[9.5px]">
-            <th className="border border-black py-1.5 px-2 text-left w-56">Exame</th>
-            <th className="border border-black py-1.5 px-2 text-left">Paciente</th>
-            <th className="border border-black py-1.5 px-2 text-center w-24">Prontuário</th>
-            <th className="border border-black py-1.5 px-2 text-left w-48">Resultado</th>
+          <tr className="bg-neutral-200 text-black font-bold border-b border-black">
+            <th className="border border-black py-1.5 px-2 text-center w-[7%]">
+              Nº
+            </th>
+            <th className="border border-black py-1.5 px-2.5 text-left w-[27%]">
+              Exame
+            </th>
+            <th className="border border-black py-1.5 px-2.5 text-left w-[36%]">
+              Paciente
+            </th>
+            <th className="border border-black py-1.5 px-2 text-center w-[12%]">
+              Prontuário
+            </th>
+            <th className="border border-black py-1.5 px-2.5 text-left w-[18%]">
+              Resultado
+            </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-black font-medium">
-          {itensPorExame.map((item, idx) => (
-            <tr key={item.prontuario + item.exame + idx} className="border-b border-black" style={{ height: "24px" }}>
-              <td className="border border-black py-1 px-2 font-bold bg-slate-50/50 print:bg-transparent">
-                {item.exame}
-              </td>
-              <td className="border border-black py-1 px-2 uppercase font-semibold truncate max-w-[240px]">
-                {item.paciente}
-              </td>
-              <td className="border border-black py-1 px-2 text-center font-mono font-bold">
-                {item.prontuario}
-              </td>
-              {/* Espaço em branco com linha pontilhada ou linha para anotação a caneta */}
-              <td className="border border-black py-1 px-2 bg-white text-slate-400 font-mono text-[9px]">
-                &nbsp;
-              </td>
-            </tr>
-          ))}
+        <tbody>
+          {itensPorExame.map((row, index) => {
+            const mudouGrupo =
+              index > 0 && itensPorExame[index - 1].exame !== row.exame;
+            return (
+              <tr
+                key={`${row.prontuario}-${row.exame}-${index}`}
+                className={`break-inside-avoid ${
+                  mudouGrupo ? "border-t-2 border-t-black" : ""
+                } ${index % 2 === 1 ? "bg-neutral-50/70" : "bg-white"}`}
+              >
+                <td className="border border-black py-2 px-2 text-center font-mono font-black text-neutral-900">
+                  {row.numeroNoGrupo}
+                </td>
+                <td className="border border-black py-2 px-2.5 font-bold text-neutral-900">
+                  {row.exame}
+                </td>
+                <td className="border border-black py-2 px-2.5 font-semibold text-neutral-900 uppercase">
+                  {row.paciente}
+                </td>
+                <td className="border border-black py-2 px-2 text-center font-mono font-bold text-neutral-900">
+                  {row.prontuario}
+                </td>
+                <td className="border border-black py-2 px-2.5 text-neutral-900 font-mono text-[10px]">
+                  {row.resultado}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
-
-      {/* RODAPÉ */}
-      <div className="mt-4 pt-2 border-t border-black flex justify-between items-center text-[9px] text-slate-600">
-        <div>Folha de tiragem da bancada. Conferir amostras e lançar no aplicativo de bancada.</div>
-        <div>Assinatura do Técnico/Biomédico: ____________________________________</div>
-      </div>
     </div>
   );
 };

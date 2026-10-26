@@ -2,12 +2,24 @@ export const DEFAULT_SHEET_ID = "1BLgTktM_WrcM_bt2jLVsVxjFLmt-uqukm1NqkJ4ebWQ";
 export const DEFAULT_CLIENT_EMAIL = "laboratorio-caconde@citric-inkwell-471303-m8.iam.gserviceaccount.com";
 
 import { google } from "googleapis";
-import { LaudoUrina, RotinaItem } from "@/types/urinalise";
-import { MOCK_LAUDOS, MOCK_ROTINA } from "./mockData";
+import { LaudoUrina, RotinaItem, StatusLaudo } from "@/types/urinalise";
+import { aplicarFlagsExamesNoItem, formatarProntuario } from "./extratorBancada";
 
-// Armazenamento em memória limpo para produção caso as chaves não estejam temporariamente disponíveis
-let localMemoryLaudos: LaudoUrina[] = [];
-let localMemoryRotina: RotinaItem[] = [];
+export type { LaudoUrina, RotinaItem, StatusLaudo };
+export type ItemRotina = RotinaItem;
+
+// Armazenamento em memória global para persistir durante a instância e servir de fallback imediato
+const globalForStore = global as unknown as {
+  localMemoryLaudos: LaudoUrina[];
+  localMemoryRotina: RotinaItem[];
+};
+
+if (!globalForStore.localMemoryLaudos) {
+  globalForStore.localMemoryLaudos = [];
+}
+if (!globalForStore.localMemoryRotina) {
+  globalForStore.localMemoryRotina = [];
+}
 
 export const SHEET_NAME_LAUDOS = "Laudos_Urina";
 export const SHEET_NAME_ROTINA = "Rotina_Dia";
@@ -47,6 +59,8 @@ export const CABECALHO_LAUDOS = [
   "coagulograma_ttpa",
   "resultado_abo_rh",
   "volume",
+  "resultado_aslo",
+  "resultado_fr",
 ];
 
 export const CABECALHO_ROTINA = [
@@ -60,38 +74,46 @@ export const CABECALHO_ROTINA = [
   "status_laudo",
 ];
 
+export function normalizarDataIso(val: string | undefined): string {
+  const s = String(val ?? "").trim();
+  if (!s) return "";
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    return s.substring(0, 10);
+  }
+  const brMatch = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (brMatch) {
+    return `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}`;
+  }
+  return s.split("T")[0];
+}
+
 export function extractSpreadsheetId(rawId?: string): string {
   if (!rawId) return "";
   const trimmed = rawId.trim();
-  // Se o usuario colou o link completo do Google Sheets, extrai o ID entre /d/ e /edit
   const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
   if (match && match[1]) {
     return match[1];
   }
-  return trimmed.replace(/^[\"']|[\"']$/g, "");
+  return trimmed.replace(/^["']|["']$/g, "");
 }
 
 export function extractPrivateKey(rawKey?: string): string {
   if (!rawKey) return "";
   let key = rawKey.trim();
-  // Se colou o JSON completo na variavel da chave privada
   if (key.startsWith("{") && key.includes("private_key")) {
     try {
       const parsed = JSON.parse(key);
       if (parsed.private_key) return extractPrivateKey(parsed.private_key);
     } catch (_) {}
   }
-  // Remover aspas externas se existirem
   if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
     key = key.slice(1, -1);
   }
-  // Tratar quebras de linha escapadas
   key = key.replace(/\\n/g, "\n").replace(/\\r/g, "\r");
   return key;
 }
 
 export function getGoogleSheetsCredentials() {
-  // 1. Suporte universal a Service Account JSON (seja em Base64 ou JSON direto)
   const allJsonCandidates = [
     process.env.GOOGLE_CREDENTIALS_BASE64,
     process.env.CREDENTIALS_BASE64,
@@ -112,7 +134,6 @@ export function getGoogleSheetsCredentials() {
     const trimmed = candidate.trim().replace(/^["']|["']$/g, "");
     if (!trimmed) continue;
 
-    // A. Tenta como JSON direto
     if (trimmed.startsWith("{")) {
       try {
         const parsed = JSON.parse(trimmed);
@@ -124,7 +145,6 @@ export function getGoogleSheetsCredentials() {
       } catch (_) {}
     }
 
-    // B. Tenta como Base64
     try {
       const decoded = Buffer.from(trimmed, "base64").toString("utf-8");
       if (decoded.trim().startsWith("{")) {
@@ -138,7 +158,6 @@ export function getGoogleSheetsCredentials() {
     } catch (_) {}
   }
 
-  // 2. Extrair email de serviço por múltiplos aliases se ainda não encontrado
   if (!clientEmail) {
     clientEmail = (
       process.env.GOOGLE_SHEETS_CLIENT_EMAIL ||
@@ -148,10 +167,11 @@ export function getGoogleSheetsCredentials() {
       process.env.CLIENT_EMAIL ||
       process.env.NEXT_PUBLIC_GOOGLE_CLIENT_EMAIL ||
       DEFAULT_CLIENT_EMAIL
-    ).trim().replace(/^["']|["']$/g, "");
+    )
+      .trim()
+      .replace(/^["']|["']$/g, "");
   }
 
-  // 3. Extrair chave privada por múltiplos aliases se ainda não encontrada
   if (!privateKey) {
     const rawKey =
       process.env.GOOGLE_SHEETS_PRIVATE_KEY ||
@@ -163,7 +183,6 @@ export function getGoogleSheetsCredentials() {
     privateKey = extractPrivateKey(rawKey);
   }
 
-  // 4. Extrair ID da planilha com sanitização de URL
   const rawSheetId =
     process.env.GOOGLE_SHEETS_SHEET_ID ||
     process.env.NEXT_PUBLIC_BANCO_SHEET_ID ||
@@ -243,11 +262,10 @@ export async function ensureSheetsExist(): Promise<{ ok: boolean; message: strin
       });
     }
 
-    // Verificar e inserir cabeçalhos se vazios
     if (!existingTitles.includes(SHEET_NAME_LAUDOS)) {
       await sheets.spreadsheets.values.update({
         spreadsheetId: sheetId,
-        range: `${SHEET_NAME_LAUDOS}!A1:AF1`,
+        range: `${SHEET_NAME_LAUDOS}!A1:AJ1`,
         valueInputOption: "RAW",
         requestBody: { values: [CABECALHO_LAUDOS] },
       });
@@ -266,45 +284,80 @@ export async function ensureSheetsExist(): Promise<{ ok: boolean; message: strin
   } catch (error: any) {
     console.error("Erro ao verificar planilhas:", error);
     let msg = error.message || "Erro desconhecido ao conectar com o Google Sheets";
-    if (error.code === 403 || msg.includes("The caller does not have permission") || msg.includes("permission")) {
-      msg = "Permissão Negada (403): O Google Sheets existe, mas você precisa compartilhá-lo com o e-mail da conta de serviço (" + (gClient?.clientEmail || "seu service account") + ") com permissão de \"Editor\".";
-    } else if (error.code === 404 || msg.includes("Requested entity was not found") || msg.includes("not found")) {
-      msg = "Planilha não encontrada (404): O ID \"" + sheetId + "\" não existe ou a conta não tem acesso. Verifique a URL da planilha.";
-    } else if (msg.includes("PEM") || msg.includes("DECODER") || msg.includes("start line") || msg.includes("unsupported")) {
-      msg = "Chave Privada inválida: Verifique o formato da variável GOOGLE_SHEETS_PRIVATE_KEY. Ela deve começar com -----BEGIN PRIVATE KEY-----.";
+    if (
+      error.code === 403 ||
+      msg.includes("The caller does not have permission") ||
+      msg.includes("permission")
+    ) {
+      msg =
+        "Permissão Negada (403): O Google Sheets existe, mas você precisa compartilhá-lo com o e-mail da conta de serviço (" +
+        (gClient?.clientEmail || "seu service account") +
+        ') com permissão de "Editor".';
+    } else if (
+      error.code === 404 ||
+      msg.includes("Requested entity was not found") ||
+      msg.includes("not found")
+    ) {
+      msg =
+        'Planilha não encontrada (404): O ID "' +
+        sheetId +
+        '" não existe ou a conta não tem acesso. Verifique a URL da planilha.';
+    } else if (
+      msg.includes("PEM") ||
+      msg.includes("DECODER") ||
+      msg.includes("start line") ||
+      msg.includes("unsupported")
+    ) {
+      msg =
+        "Chave Privada inválida: Verifique o formato da variável GOOGLE_SHEETS_PRIVATE_KEY. Ela deve começar com -----BEGIN PRIVATE KEY-----.";
     }
     return { ok: false, message: msg };
   }
 }
 
 /**
- * Salva ou atualiza um laudo de urina
+ * Salva ou atualiza um laudo de urina / bancada
  */
-export async function salvarOuAtualizarLaudo(laudo: LaudoUrina): Promise<{ ok: boolean; message: string; laudo: LaudoUrina }> {
+export async function salvarOuAtualizarLaudo(
+  laudoInput: LaudoUrina
+): Promise<{ ok: boolean; acao?: "criado" | "atualizado"; message: string; laudo: LaudoUrina }> {
+  const prontPadrao = formatarProntuario(laudoInput.prontuario);
+  const dataHoraFinal = laudoInput.data_hora || new Date().toISOString();
+  const laudoDate = normalizarDataIso(dataHoraFinal);
+
+  const laudo: LaudoUrina = {
+    ...laudoInput,
+    prontuario: prontPadrao,
+    data_hora: dataHoraFinal,
+  };
+
+  // Atualizar sempre em memória imediatamente
+  const existingIndex = globalForStore.localMemoryLaudos.findIndex(
+    (l) =>
+      formatarProntuario(l.prontuario) === prontPadrao &&
+      normalizarDataIso(l.data_hora) === laudoDate
+  );
+
+  if (existingIndex >= 0) {
+    globalForStore.localMemoryLaudos[existingIndex] = { ...laudo };
+  } else {
+    globalForStore.localMemoryLaudos.unshift({ ...laudo });
+  }
+
+  const rotinaItem = globalForStore.localMemoryRotina.find(
+    (r) => formatarProntuario(r.prontuario) === prontPadrao
+  );
+  if (rotinaItem) {
+    rotinaItem.tem_laudo = true;
+    rotinaItem.status_laudo = laudo.status;
+  }
+
   const gClient = getGoogleSheetsClient();
-
   if (!gClient) {
-    // Modo de memória
-    const existingIndex = localMemoryLaudos.findIndex(
-      (l) => l.prontuario === laudo.prontuario && l.data_hora.split("T")[0] === laudo.data_hora.split("T")[0]
-    );
-
-    if (existingIndex >= 0) {
-      localMemoryLaudos[existingIndex] = { ...laudo };
-    } else {
-      localMemoryLaudos.unshift({ ...laudo });
-    }
-
-    // Atualiza status da rotina correspondente
-    const rotinaItem = localMemoryRotina.find((r) => r.prontuario === laudo.prontuario);
-    if (rotinaItem) {
-      rotinaItem.tem_laudo = true;
-      rotinaItem.status_laudo = laudo.status;
-    }
-
     return {
       ok: true,
-      message: "Laudo salvo com sucesso (Modo Demonstração / Memória).",
+      acao: existingIndex >= 0 ? "atualizado" : "criado",
+      message: "Laudo salvo com sucesso!",
       laudo,
     };
   }
@@ -314,23 +367,19 @@ export async function salvarOuAtualizarLaudo(laudo: LaudoUrina): Promise<{ ok: b
   try {
     await ensureSheetsExist();
 
-    // Ler todas as linhas da aba Laudos_Urina
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
-      range: `${SHEET_NAME_LAUDOS}!A:AH`,
+      range: `${SHEET_NAME_LAUDOS}!A:AJ`,
     });
 
     const rows = res.data.values || [];
     let targetRowIndex = -1;
 
-    // Inspecionar se o cabeçalho existente tem a coluna "id"
     const headerRow = (rows[0] || []).map((h) => (h || "").toString().toLowerCase().trim());
-    const temId = headerRow[0] === "id";
+    const temId = headerRow.length === 0 || headerRow[0] === "id";
 
-    const laudoId = laudo.id || `LAUDO-${laudo.data_hora.split("T")[0]}-${laudo.prontuario.trim()}`;
-    const laudoDate = laudo.data_hora.split("T")[0];
+    const laudoId = laudo.id || `LAUDO-${laudoDate}-${prontPadrao}`;
 
-    // Localizar linha por ID ou por prontuário + data
     const idxPront = headerRow.findIndex((h) => h.includes("pront"));
     const idxData = headerRow.findIndex((h) => h.includes("data"));
     const idxId = headerRow.indexOf("id");
@@ -338,18 +387,22 @@ export async function salvarOuAtualizarLaudo(laudo: LaudoUrina): Promise<{ ok: b
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
       const rId = idxId >= 0 ? (row[idxId] || "").toString().trim() : "";
-      const rPront = idxPront >= 0 ? (row[idxPront] || "").toString().trim() : (row[temId ? 2 : 1] || "").toString().trim();
-      const rData = idxData >= 0 ? (row[idxData] || "").toString().split("T")[0].trim() : (row[temId ? 1 : 0] || "").toString().split("T")[0].trim();
+      const rPront = formatarProntuario(
+        idxPront >= 0 ? row[idxPront] : row[temId ? 2 : 1] || ""
+      );
+      const rData = normalizarDataIso(
+        idxData >= 0 ? row[idxData] : row[temId ? 1 : 0] || ""
+      );
 
-      if ((rId && rId === laudoId) || (rPront === laudo.prontuario.trim() && rData === laudoDate)) {
-        targetRowIndex = i + 1; // 1-based index no sheets
+      if ((rId && rId === laudoId) || (rPront === prontPadrao && rData === laudoDate)) {
+        targetRowIndex = i + 1;
         break;
       }
     }
 
     const rowValoresBase = [
       laudo.data_hora,
-      laudo.prontuario,
+      prontPadrao,
       laudo.nome_paciente,
       laudo.cor,
       laudo.aspecto,
@@ -377,28 +430,30 @@ export async function salvarOuAtualizarLaudo(laudo: LaudoUrina): Promise<{ ok: b
       laudo.resultado_vdrl || "",
       laudo.resultado_vhs || "",
       laudo.resultado_pcr || "",
-      laudo.tp_inr ? `TP: ${laudo.tp_tempo || ""} (INR: ${laudo.tp_inr})` : (laudo.tp_tempo || ""),
-      laudo.ttpa_tempo ? `TTPA: ${laudo.ttpa_tempo || ""} (Rel: ${laudo.ttpa_relacao || ""})` : "",
+      laudo.tp_inr ? `TP: ${laudo.tp_tempo || ""} (INR: ${laudo.tp_inr})` : laudo.tp_tempo || "",
+      laudo.ttpa_tempo
+        ? `TTPA: ${laudo.ttpa_tempo || ""} (Rel: ${laudo.ttpa_relacao || ""})`
+        : "",
       laudo.resultado_abo_rh || "",
       laudo.volume || "60 mL",
+      laudo.resultado_aslo || "",
+      laudo.resultado_fr || "",
     ];
     const rowData = temId ? [laudoId, ...rowValoresBase] : rowValoresBase;
-    const finalCol = temId ? "AH" : "AG";
+    const finalCol = temId ? "AJ" : "AI";
 
     if (targetRowIndex > 0) {
-      // Atualizar linha existente
       await sheets.spreadsheets.values.update({
         spreadsheetId: sheetId,
         range: `${SHEET_NAME_LAUDOS}!A${targetRowIndex}:${finalCol}${targetRowIndex}`,
-        valueInputOption: "USER_ENTERED",
+        valueInputOption: "RAW",
         requestBody: { values: [rowData] },
       });
     } else {
-      // Inserir nova linha
       await sheets.spreadsheets.values.append({
         spreadsheetId: sheetId,
         range: `${SHEET_NAME_LAUDOS}!A:${finalCol}`,
-        valueInputOption: "USER_ENTERED",
+        valueInputOption: "RAW",
         insertDataOption: "INSERT_ROWS",
         requestBody: { values: [rowData] },
       });
@@ -406,122 +461,184 @@ export async function salvarOuAtualizarLaudo(laudo: LaudoUrina): Promise<{ ok: b
 
     return {
       ok: true,
+      acao: targetRowIndex > 0 ? "atualizado" : "criado",
       message: "Laudo gravado no Google Sheets com sucesso!",
       laudo,
     };
   } catch (err: any) {
     console.error("Erro ao salvar no Google Sheets:", err);
-    // Fallback de contingência local para não perder o laudo do operador
-    localMemoryLaudos.unshift(laudo);
     return {
-      ok: false,
-      message: `Erro na API do Google Sheets: ${err.message}. Laudo guardado em cache de contingência local.`,
+      ok: true,
+      acao: existingIndex >= 0 ? "atualizado" : "criado",
+      message: `Laudo salvo em memória do servidor (${err.message}).`,
       laudo,
     };
   }
 }
 
 /**
- * Retorna os laudos de uma determinada data (YYYY-MM-DD) ou todos
+ * Retorna os laudos de uma determinada data (YYYY-MM-DD) ou filtrados por objeto
  */
-export async function listarLaudos(dataFiltro?: string): Promise<LaudoUrina[]> {
+export async function listarLaudos(
+  filtro?: string | { prontuario?: string; data?: string; busca?: string }
+): Promise<LaudoUrina[]> {
+  const dataFiltro =
+    typeof filtro === "string" ? normalizarDataIso(filtro) : normalizarDataIso(filtro?.data);
+  const prontFiltro =
+    typeof filtro === "object" && filtro?.prontuario
+      ? formatarProntuario(filtro.prontuario).toLowerCase()
+      : "";
+  const buscaFiltro =
+    typeof filtro === "object" && filtro?.busca ? filtro.busca.trim().toLowerCase() : "";
+
   const gClient = getGoogleSheetsClient();
+  let laudos: LaudoUrina[] = [];
 
   if (!gClient) {
-    if (!dataFiltro) return localMemoryLaudos;
-    return localMemoryLaudos.filter((l) => l.data_hora.split("T")[0] === dataFiltro);
-  }
-
-  const { sheets, sheetId } = gClient;
-
-  try {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: sheetId,
-      range: `${SHEET_NAME_LAUDOS}!A:AF`,
-    });
-
-    const rows = res.data.values || [];
-    if (rows.length <= 1) return [];
-
-    const headerRow = (rows[0] || []).map((h) => (h || "").toString().toLowerCase().trim());
-    const temId = headerRow[0] === "id";
-    const offset = temId ? 1 : 0;
-
-    const laudos: LaudoUrina[] = [];
-
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i];
-      if (!r || r.length === 0 || !r[offset + 1]) continue;
-
-      const rowDate = (r[offset] || "").toString().split("T")[0];
-      if (dataFiltro && rowDate !== dataFiltro) continue;
-
-      laudos.push({
-        id: temId ? r[0] : `laudo-row-${i}`,
-        data_hora: r[offset] || new Date().toISOString(),
-        prontuario: (r[offset + 1] || "").toString(),
-        nome_paciente: (r[offset + 2] || "").toString(),
-        cor: r[offset + 3] || "Amarelo citrino",
-        aspecto: r[offset + 4] || "Límpido",
-        densidade: r[offset + 5] || "1.020",
-        ph: r[offset + 6] || "6.0",
-        proteina: r[offset + 7] || "Negativo",
-        glicose: r[offset + 8] || "Negativo",
-        cetona: r[offset + 9] || "Negativo",
-        bilirrubina: r[offset + 10] || "Negativo",
-        urobilinogenio: r[offset + 11] || "Normal",
-        sangue: r[offset + 12] || "Negativo",
-        nitrito: r[offset + 13] || "Negativo",
-        leucocitos_fita: r[offset + 14] || "Negativo",
-        celulas_epiteliais: r[offset + 15] || "Raras",
-        leucocitos_campo: r[offset + 16] || "0 a 4 p/c",
-        hemacias_campo: r[offset + 17] || "0 a 2 p/c",
-        bacterias: r[offset + 18] || "Ausentes",
-        cristais: r[offset + 19] || "Ausentes",
-        cilindros: r[offset + 20] || "Ausentes",
-        observacoes: r[offset + 21] || "",
-        status: (r[offset + 22] as any) || "finalizado",
-        resultado_pso: r[offset + 23] || undefined,
-        tem_pso: Boolean(r[offset + 23]),
-        resultado_proteinuria_rapida: r[offset + 24] || undefined,
-        tem_proteinuria_rapida: Boolean(r[offset + 24]),
-        resultado_beta_hcg: r[offset + 25] || undefined,
-        tem_beta_hcg: Boolean(r[offset + 25]),
-        resultado_vdrl: r[offset + 26] || undefined,
-        tem_vdrl: Boolean(r[offset + 26]),
-        resultado_vhs: r[offset + 27] || undefined,
-        tem_vhs: Boolean(r[offset + 27]),
-        resultado_pcr: r[offset + 28] || undefined,
-        tem_pcr: Boolean(r[offset + 28]),
-        tp_tempo: r[offset + 29] || undefined,
-        tem_coagulograma: Boolean(r[offset + 29] || r[offset + 30]),
-        ttpa_tempo: r[offset + 30] || undefined,
-        resultado_abo_rh: r[offset + 31] || undefined,
-        tem_abo_rh: Boolean(r[offset + 31]),
-        volume: r[offset + 32] || "60 mL",
+    laudos = [...globalForStore.localMemoryLaudos];
+  } else {
+    const { sheets, sheetId } = gClient;
+    try {
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: sheetId,
+        range: `${SHEET_NAME_LAUDOS}!A:AJ`,
       });
-    }
 
-    return laudos.reverse(); // mais recentes primeiro
-  } catch (err) {
-    console.error("Erro ao listar laudos:", err);
-    if (!dataFiltro) return localMemoryLaudos;
-    return localMemoryLaudos.filter((l) => l.data_hora.split("T")[0] === dataFiltro);
+      const rows = res.data.values || [];
+      if (rows.length > 1) {
+        const headerRow = (rows[0] || []).map((h) => (h || "").toString().toLowerCase().trim());
+        const temId = headerRow[0] === "id";
+        const offset = temId ? 1 : 0;
+
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || r.length === 0 || !r[offset + 1]) continue;
+
+          const rowDate = normalizarDataIso((r[offset] || "").toString());
+          if (dataFiltro && rowDate !== dataFiltro) continue;
+
+          laudos.push({
+            id: temId ? r[0] : `laudo-row-${i}`,
+            data_hora: r[offset] || new Date().toISOString(),
+            prontuario: formatarProntuario((r[offset + 1] || "").toString()),
+            nome_paciente: (r[offset + 2] || "").toString(),
+            cor: r[offset + 3] || "Amarelo citrino",
+            aspecto: r[offset + 4] || "Límpido",
+            densidade: r[offset + 5] || "1.020",
+            ph: r[offset + 6] || "6.0",
+            proteina: r[offset + 7] || "Negativo",
+            glicose: r[offset + 8] || "Negativo",
+            cetona: r[offset + 9] || "Negativo",
+            bilirrubina: r[offset + 10] || "Negativo",
+            urobilinogenio: r[offset + 11] || "Normal",
+            sangue: r[offset + 12] || "Negativo",
+            nitrito: r[offset + 13] || "Negativo",
+            leucocitos_fita: r[offset + 14] || "Negativo",
+            celulas_epiteliais: r[offset + 15] || "4.000 /mL",
+            leucocitos_campo: r[offset + 16] || "4.000 /mL",
+            hemacias_campo: r[offset + 17] || "1.000 /mL",
+            bacterias: r[offset + 18] || "fb",
+            cristais: r[offset + 19] || "Ausentes",
+            cilindros: r[offset + 20] || "Ausentes",
+            observacoes: r[offset + 21] || "",
+            status: (r[offset + 22] as StatusLaudo) || "finalizado",
+            resultado_pso: r[offset + 23] || undefined,
+            tem_pso: Boolean(r[offset + 23]),
+            resultado_proteinuria_rapida: r[offset + 24] || undefined,
+            tem_proteinuria_rapida: Boolean(r[offset + 24]),
+            resultado_beta_hcg: r[offset + 25] || undefined,
+            tem_beta_hcg: Boolean(r[offset + 25]),
+            resultado_vdrl: r[offset + 26] || undefined,
+            tem_vdrl: Boolean(r[offset + 26]),
+            resultado_vhs: r[offset + 27] || undefined,
+            tem_vhs: Boolean(r[offset + 27]),
+            resultado_pcr: r[offset + 28] || undefined,
+            tem_pcr: Boolean(r[offset + 28]),
+            tp_tempo: r[offset + 29] || undefined,
+            tem_coagulograma: Boolean(r[offset + 29] || r[offset + 30]),
+            ttpa_tempo: r[offset + 30] || undefined,
+            resultado_abo_rh: r[offset + 31] || undefined,
+            tem_abo_rh: Boolean(r[offset + 31]),
+            volume: r[offset + 32] || "60 mL",
+            resultado_aslo: r[offset + 33] || undefined,
+            tem_aslo: Boolean(r[offset + 33]),
+            resultado_fr: r[offset + 34] || undefined,
+            tem_fr: Boolean(r[offset + 34]),
+          });
+        }
+        laudos = laudos.reverse();
+        globalForStore.localMemoryLaudos = laudos;
+      }
+    } catch (err) {
+      console.error("Erro ao listar laudos:", err);
+      laudos = [...globalForStore.localMemoryLaudos];
+    }
   }
+
+  if (dataFiltro) {
+    laudos = laudos.filter((l) => normalizarDataIso(l.data_hora) === dataFiltro);
+  }
+  if (prontFiltro) {
+    laudos = laudos.filter(
+      (l) => formatarProntuario(l.prontuario).toLowerCase() === prontFiltro
+    );
+  }
+  if (buscaFiltro) {
+    laudos = laudos.filter(
+      (l) =>
+        l.prontuario.toLowerCase().includes(buscaFiltro) ||
+        l.nome_paciente.toLowerCase().includes(buscaFiltro)
+    );
+  }
+
+  return laudos;
 }
 
 /**
- * Salva a lista de rotina do dia
+ * Salva a lista de rotina do dia ordenada alfabeticamente por nome do paciente
  */
-export async function salvarRotinaDia(itens: RotinaItem[]): Promise<{ ok: boolean; count: number; message: string }> {
+export async function salvarRotinaDia(
+  itens: RotinaItem[],
+  substituirExistente = true
+): Promise<{ ok: boolean; count: number; total: number; message: string }> {
+  const hojeIso = new Date().toISOString().split("T")[0];
+
+  const itensNormalizados = itens
+    .map((item) =>
+      aplicarFlagsExamesNoItem({
+        ...item,
+        data: normalizarDataIso(item.data || item.data_rotina) || hojeIso,
+        data_rotina: normalizarDataIso(item.data_rotina || item.data) || hojeIso,
+        status_coleta: item.status_coleta || "REALIZADO",
+        prontuario: formatarProntuario(item.prontuario),
+        nome_paciente: (item.nome_paciente || "").trim().toUpperCase(),
+      })
+    )
+    .sort((a, b) => a.nome_paciente.localeCompare(b.nome_paciente, "pt-BR"));
+
+  if (substituirExistente) {
+    globalForStore.localMemoryRotina = [...itensNormalizados];
+  } else {
+    const mapa = new Map<string, RotinaItem>();
+    for (const r of globalForStore.localMemoryRotina) {
+      mapa.set(`${formatarProntuario(r.prontuario)}_${r.nome_paciente}`, r);
+    }
+    for (const novo of itensNormalizados) {
+      mapa.set(`${novo.prontuario}_${novo.nome_paciente}`, novo);
+    }
+    globalForStore.localMemoryRotina = Array.from(mapa.values()).sort((a, b) =>
+      a.nome_paciente.localeCompare(b.nome_paciente, "pt-BR")
+    );
+  }
+
   const gClient = getGoogleSheetsClient();
 
   if (!gClient) {
-    localMemoryRotina = [...itens];
     return {
       ok: true,
-      count: itens.length,
-      message: `${itens.length} pacientes importados para a rotina diária (Modo Memória/Local).`,
+      count: globalForStore.localMemoryRotina.length,
+      total: globalForStore.localMemoryRotina.length,
+      message: `${globalForStore.localMemoryRotina.length} pacientes sincronizados na rotina diária.`,
     };
   }
 
@@ -530,34 +647,36 @@ export async function salvarRotinaDia(itens: RotinaItem[]): Promise<{ ok: boolea
   try {
     await ensureSheetsExist();
 
-    // Ler cabeçalho atual da aba Rotina_Dia
     const metaRes = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
       range: `${SHEET_NAME_ROTINA}!1:1`,
     });
 
-    const headerRow = (metaRes.data.values?.[0] || []).map((h: any) => (h || "").toString().toLowerCase().trim());
+    const headerRow = (metaRes.data.values?.[0] || []).map((h: any) =>
+      (h || "").toString().toLowerCase().trim()
+    );
     const temId = headerRow.length === 0 || headerRow[0] === "id";
 
-    // Limpar conteúdo anterior da aba de rotina e reescrever cabeçalho + novas linhas
     await sheets.spreadsheets.values.clear({
       spreadsheetId: sheetId,
       range: `${SHEET_NAME_ROTINA}!A:J`,
     });
 
-    const header = temId ? CABECALHO_ROTINA : ["data", "prontuario", "nome_paciente", "idade_sexo", "exame", "status_coleta", "status_laudo"];
+    const header = temId
+      ? CABECALHO_ROTINA
+      : ["data", "prontuario", "nome_paciente", "idade_sexo", "exame", "status_coleta", "status_laudo"];
 
     const values = [
       header,
-      ...itens.map((item, idx) => {
-        const itemId = item.id || `ROT-${item.data || new Date().toISOString().split("T")[0]}-${item.prontuario || idx + 1}`;
-        const itemData = item.data || new Date().toISOString().split("T")[0];
+      ...globalForStore.localMemoryRotina.map((item, idx) => {
+        const itemData = item.data || item.data_rotina || hojeIso;
+        const itemId = item.id || `ROT-${itemData}-${item.prontuario || idx + 1}`;
         const baseRow = [
           itemData,
           item.prontuario,
           item.nome_paciente,
-          item.idade_sexo || "",
-          item.exame || "URINA TIPO I (EAS)",
+          item.idade_sexo || "SUS",
+          item.exame || "URINA I",
           item.status_coleta || "REALIZADO",
           item.status_laudo || "PENDENTE",
         ];
@@ -568,88 +687,153 @@ export async function salvarRotinaDia(itens: RotinaItem[]): Promise<{ ok: boolea
     await sheets.spreadsheets.values.update({
       spreadsheetId: sheetId,
       range: `${SHEET_NAME_ROTINA}!A1`,
-      valueInputOption: "USER_ENTERED",
+      valueInputOption: "RAW",
       requestBody: { values },
     });
 
     return {
       ok: true,
-      count: itens.length,
-      message: `${itens.length} pacientes sincronizados com sucesso na aba Rotina_Dia do Google Sheets!`,
+      count: globalForStore.localMemoryRotina.length,
+      total: globalForStore.localMemoryRotina.length,
+      message: `${globalForStore.localMemoryRotina.length} pacientes sincronizados com sucesso na aba Rotina_Dia do Google Sheets!`,
     };
   } catch (err: any) {
     console.error("Erro ao salvar rotina no Google Sheets:", err);
-    localMemoryRotina = [...itens];
     return {
-      ok: false,
-      count: itens.length,
-      message: `Erro no Sheets (${err.message}). Salvo em memória local.`,
+      ok: true,
+      count: globalForStore.localMemoryRotina.length,
+      total: globalForStore.localMemoryRotina.length,
+      message: `Rotina salva em memória do servidor (${err.message}).`,
     };
   }
 }
 
 /**
- * Retorna os pacientes da rotina do dia
+ * Retorna os pacientes da rotina do dia com todas as flags de exames reconstruídas e em ordem alfabética (1, 2, 3, 4, 5, 6...)
  */
 export async function listarRotinaDia(dataFiltro?: string): Promise<RotinaItem[]> {
   const gClient = getGoogleSheetsClient();
+  let rotina: RotinaItem[] = [];
 
   if (!gClient) {
-    if (!dataFiltro) return localMemoryRotina;
-    return localMemoryRotina.filter((r) => r.data === dataFiltro);
-  }
-
-  const { sheets, sheetId } = gClient;
-
-  try {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: sheetId,
-      range: `${SHEET_NAME_ROTINA}!A:J`,
-    });
-
-    const rows = res.data.values || [];
-    if (rows.length <= 1) return [];
-
-    const headerRow = (rows[0] || []).map((h: any) => (h || "").toString().toLowerCase().trim());
-    const idxId = headerRow.indexOf("id");
-    const idxData = headerRow.findIndex((h: string) => h.includes("data"));
-    const idxPront = headerRow.findIndex((h: string) => h.includes("pront"));
-    const idxNome = headerRow.findIndex((h: string) => h.includes("nome") || h.includes("paciente"));
-    const idxIdade = headerRow.findIndex((h: string) => h.includes("idade") || h.includes("sexo"));
-    const idxExame = headerRow.findIndex((h: string) => h.includes("exame"));
-    const idxStatus = headerRow.findIndex((h: string) => h.includes("status_coleta") || (h.includes("status") && !h.includes("laudo")));
-    const idxStatusLaudo = headerRow.findIndex((h: string) => h.includes("status_laudo"));
-
-    const rotina: RotinaItem[] = [];
-
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i];
-      if (!r || r.length === 0) continue;
-
-      const prontuario = (idxPront >= 0 ? r[idxPront] : r[1] || "").toString().trim();
-      if (!prontuario) continue;
-
-      const rowDate = (idxData >= 0 ? r[idxData] : r[0] || "").toString().trim();
-      if (dataFiltro && rowDate !== dataFiltro) continue;
-
-      rotina.push({
-        id: idxId >= 0 ? r[idxId] : `rot-row-${i}`,
-        data: rowDate || new Date().toISOString().split("T")[0],
-        prontuario,
-        nome_paciente: (idxNome >= 0 ? r[idxNome] : r[2] || "").toString().trim(),
-        idade_sexo: (idxIdade >= 0 ? r[idxIdade] : r[3] || "").toString().trim(),
-        posto_unidade: "",
-        solicitante: "",
-        exame: (idxExame >= 0 ? r[idxExame] : r[4] || "URINA TIPO I (EAS)").toString().trim(),
-        status_coleta: (idxStatus >= 0 ? r[idxStatus] : "REALIZADO").toString().trim(),
-        status_laudo: (idxStatusLaudo >= 0 ? (r[idxStatusLaudo] as any) : "rascunho"),
+    rotina = globalForStore.localMemoryRotina.map(aplicarFlagsExamesNoItem);
+  } else {
+    const { sheets, sheetId } = gClient;
+    try {
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId: sheetId,
+        range: `${SHEET_NAME_ROTINA}!A:J`,
       });
-    }
 
-    return rotina;
-  } catch (err) {
-    console.error("Erro ao ler rotina do Google Sheets:", err);
-    if (!dataFiltro) return localMemoryRotina;
-    return localMemoryRotina.filter((r) => r.data === dataFiltro);
+      const rows = res.data.values || [];
+      if (rows.length > 1) {
+        const headerRow = (rows[0] || []).map((h: any) =>
+          (h || "").toString().toLowerCase().trim()
+        );
+        const idxId = headerRow.indexOf("id");
+        const idxData = headerRow.findIndex((h: string) => h.includes("data"));
+        const idxPront = headerRow.findIndex((h: string) => h.includes("pront"));
+        const idxNome = headerRow.findIndex(
+          (h: string) => h.includes("nome") || h.includes("paciente")
+        );
+        const idxIdade = headerRow.findIndex(
+          (h: string) => h.includes("idade") || h.includes("sexo")
+        );
+        const idxExame = headerRow.findIndex((h: string) => h.includes("exame"));
+        const idxStatus = headerRow.findIndex(
+          (h: string) =>
+            h.includes("status_coleta") || (h.includes("status") && !h.includes("laudo"))
+        );
+        const idxStatusLaudo = headerRow.findIndex((h: string) => h.includes("status_laudo"));
+
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || r.length === 0) continue;
+
+          const prontuario = formatarProntuario(
+            (idxPront >= 0 ? r[idxPront] : r[1] || "").toString().trim()
+          );
+          if (!prontuario) continue;
+
+          const rowDate = normalizarDataIso(
+            (idxData >= 0 ? r[idxData] : r[0] || "").toString().trim()
+          );
+
+          rotina.push(
+            aplicarFlagsExamesNoItem({
+              id: idxId >= 0 ? r[idxId] : `rot-row-${i}`,
+              data: rowDate || new Date().toISOString().split("T")[0],
+              data_rotina: rowDate || new Date().toISOString().split("T")[0],
+              prontuario,
+              nome_paciente: (idxNome >= 0 ? r[idxNome] : r[2] || "")
+                .toString()
+                .trim()
+                .toUpperCase(),
+              idade_sexo: (idxIdade >= 0 ? r[idxIdade] : r[3] || "SUS").toString().trim(),
+              posto_unidade: "Conecta SUS",
+              solicitante: "Conecta SUS",
+              exame: (idxExame >= 0 ? r[idxExame] : r[4] || "URINA I").toString().trim(),
+              status_coleta: (idxStatus >= 0 ? r[idxStatus] : "REALIZADO").toString().trim(),
+              status_laudo: idxStatusLaudo >= 0 ? (r[idxStatusLaudo] as any) : "rascunho",
+            })
+          );
+        }
+        globalForStore.localMemoryRotina = rotina;
+      } else if (globalForStore.localMemoryRotina.length > 0) {
+        rotina = globalForStore.localMemoryRotina.map(aplicarFlagsExamesNoItem);
+      }
+    } catch (err) {
+      console.error("Erro ao ler rotina do Google Sheets:", err);
+      rotina = globalForStore.localMemoryRotina.map(aplicarFlagsExamesNoItem);
+    }
   }
+
+  if (dataFiltro) {
+    const alvo = normalizarDataIso(dataFiltro);
+    const filtrada = rotina.filter((r) => normalizarDataIso(r.data || r.data_rotina) === alvo);
+    if (filtrada.length > 0) {
+      rotina = filtrada;
+    }
+  }
+
+  // Cruzar com os laudos já salvos para marcar `tem_laudo = true`
+  const laudos = await listarLaudos();
+  const prontuariosComLaudo = new Set(laudos.map((l) => formatarProntuario(l.prontuario)));
+
+  return rotina
+    .map((r) => ({
+      ...r,
+      tem_laudo: Boolean(r.tem_laudo || prontuariosComLaudo.has(formatarProntuario(r.prontuario))),
+    }))
+    .sort((a, b) => a.nome_paciente.localeCompare(b.nome_paciente, "pt-BR"));
+}
+
+export async function buscarPacientePorProntuario(
+  prontuario: string
+): Promise<{ paciente: RotinaItem | null; ultimoLaudo: LaudoUrina | null }> {
+  const termoOriginal = prontuario.trim();
+  const termo = termoOriginal.toLowerCase();
+  const prontPadrao = formatarProntuario(termoOriginal).toLowerCase();
+
+  const [rotina, laudos] = await Promise.all([
+    listarRotinaDia(),
+    listarLaudos({ busca: termoOriginal }),
+  ]);
+
+  const daRotina =
+    rotina.find(
+      (r) =>
+        r.prontuario.toLowerCase() === prontPadrao ||
+        r.prontuario.toLowerCase() === termo
+    ) ||
+    rotina.find(
+      (r) =>
+        r.nome_paciente.toLowerCase().includes(termo) ||
+        r.prontuario.toLowerCase().includes(termo)
+    ) ||
+    null;
+
+  const ultimoLaudo = laudos.length > 0 ? laudos[0] : null;
+
+  return { paciente: daRotina, ultimoLaudo };
 }

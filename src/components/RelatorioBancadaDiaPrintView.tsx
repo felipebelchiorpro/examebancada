@@ -110,7 +110,7 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                 <div className="space-y-0.5 text-[9.5px] font-mono leading-none">
                   <div className="flex justify-between border-b border-dotted border-slate-300 pb-0.5">
                     <span className="font-black text-black">VOL:</span>
-                    <span className="font-sans font-medium text-slate-900">Frasco</span>
+                    <span className="font-sans font-medium text-slate-900">{l.volume || "60 mL"}</span>
                   </div>
                   <div className="flex justify-between border-b border-dotted border-slate-300 pb-0.5">
                     <span className="font-black text-black">COR:</span>
@@ -130,15 +130,15 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                   </div>
                   <div className="flex justify-between border-b border-dotted border-slate-300 pb-0.5">
                     <span className="font-black text-black">H:</span>
-                    <span className="font-sans font-bold text-slate-900">{l.hemacias_campo || "0-2 p/c"}</span>
+                    <span className="font-sans font-bold text-slate-900">{l.hemacias_campo || "1.000 /mL"}</span>
                   </div>
                   <div className="flex justify-between border-b border-dotted border-slate-300 pb-0.5">
                     <span className="font-black text-black">L:</span>
-                    <span className="font-sans font-bold text-slate-900">{l.leucocitos_campo || "0-4 p/c"}</span>
+                    <span className="font-sans font-bold text-slate-900">{l.leucocitos_campo || "4.000 /mL"}</span>
                   </div>
                   <div className="flex justify-between border-b border-dotted border-slate-300 pb-0.5">
                     <span className="font-black text-black">C:</span>
-                    <span className="font-sans font-semibold text-slate-900">{l.celulas_epiteliais || "Raras"}</span>
+                    <span className="font-sans font-semibold text-slate-900">{l.celulas_epiteliais || "6.000 /mL"}</span>
                   </div>
                   <div className="flex justify-between border-b border-dotted border-slate-300 pb-0.5">
                     <span className="font-black text-black">B:</span>

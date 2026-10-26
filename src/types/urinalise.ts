@@ -11,6 +11,7 @@ export interface LaudoUrina {
 
   // 1. Urinálise (EAS / Sumário)
   tem_urina?: boolean;
+  volume?: string;
   cor: string;
   aspecto: string;
   densidade: string;
@@ -129,8 +130,9 @@ export const DEFAULT_LAB_CONFIG: LabConfig = {
 
 export const VALORES_PADRAO_NORMAL: Omit<LaudoUrina, "data_hora" | "prontuario" | "nome_paciente" | "status" | "observacoes"> = {
   tem_urina: true,
-  cor: "Amarelo citrino",
-  aspecto: "Límpido",
+  volume: "60 mL",
+  cor: "AC (Amarelo citrino)",
+  aspecto: "L (Límpido)",
   densidade: "1.020",
   ph: "6.0",
   proteina: "Negativo",
@@ -141,9 +143,9 @@ export const VALORES_PADRAO_NORMAL: Omit<LaudoUrina, "data_hora" | "prontuario" 
   sangue: "Negativo",
   nitrito: "Negativo",
   leucocitos_fita: "Negativo",
-  celulas_epiteliais: "Raras",
-  leucocitos_campo: "0 a 4 p/c",
-  hemacias_campo: "0 a 2 p/c",
+  celulas_epiteliais: "6.000 /mL",
+  leucocitos_campo: "4.000 /mL",
+  hemacias_campo: "1.000 /mL",
   bacterias: "Ausentes",
   cristais: "Ausentes",
   cilindros: "Ausentes",

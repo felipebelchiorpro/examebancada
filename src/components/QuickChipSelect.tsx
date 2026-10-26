@@ -10,6 +10,7 @@ interface QuickChipSelectProps {
   onChange: (value: string) => void;
   columns?: "auto" | 2 | 3 | 4 | 5;
   compact?: boolean;
+  allowCustom?: boolean;
 }
 
 export const QuickChipSelect: React.FC<QuickChipSelectProps> = ({
@@ -20,9 +21,8 @@ export const QuickChipSelect: React.FC<QuickChipSelectProps> = ({
   onChange,
   columns = "auto",
   compact = false,
+  allowCustom = false,
 }) => {
-  const isSelectedAbnormal = options.find((opt) => opt.value === value)?.isAbnormal;
-
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between">
@@ -73,6 +73,19 @@ export const QuickChipSelect: React.FC<QuickChipSelectProps> = ({
           );
         })}
       </div>
+
+      {allowCustom && (
+        <div className="flex items-center gap-2 pt-0.5">
+          <span className="text-[11px] text-slate-500 font-medium">Outro valor / manual:</span>
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="px-2.5 py-1 text-xs border border-slate-300 rounded font-mono w-36 focus:ring-1 focus:ring-teal-500 focus:border-teal-500 bg-white"
+            placeholder="Digite aqui..."
+          />
+        </div>
+      )}
     </div>
   );
 };

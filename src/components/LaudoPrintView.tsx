@@ -126,6 +126,11 @@ export const LaudoPrintView: React.FC<LaudoPrintViewProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100">
               <tr>
+                <td className="py-1 px-2 font-medium">Volume da Amostra</td>
+                <td className="py-1 px-2 font-bold text-slate-900">{laudo.volume || "60 mL"}</td>
+                <td className="py-1 px-2 text-right text-slate-500">-</td>
+              </tr>
+              <tr>
                 <td className="py-1 px-2 font-medium">Cor</td>
                 <td className="py-1 px-2 font-bold text-slate-900">{laudo.cor}</td>
                 <td className="py-1 px-2 text-right text-slate-500">Amarelo citrino</td>

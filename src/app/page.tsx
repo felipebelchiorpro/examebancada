@@ -61,6 +61,7 @@ export default function BancadaPage() {
   // Form de Laudo
   const [form, setForm] = useState<Omit<LaudoUrina, "prontuario" | "nome_paciente">>({
     data_hora: "",
+    volume: "60 mL",
     ...VALORES_PADRAO_NORMAL,
     observacoes: "",
     status: "finalizado",
@@ -345,6 +346,7 @@ export default function BancadaPage() {
           }
           setForm({
             data_hora: l.data_hora || new Date().toISOString(),
+            volume: l.volume || VALORES_PADRAO_NORMAL.volume || "60 mL",
             cor: l.cor || VALORES_PADRAO_NORMAL.cor,
             aspecto: l.aspecto || VALORES_PADRAO_NORMAL.aspecto,
             densidade: l.densidade || VALORES_PADRAO_NORMAL.densidade,
@@ -1057,6 +1059,23 @@ export default function BancadaPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* VOLUME (VOL) */}
+            <QuickChipSelect
+              label="Volume da Amostra (VOL)"
+              sublabel="Ref: Frasco / mL"
+              value={form.volume || "60 mL"}
+              onChange={(val) => setForm({ ...form, volume: val })}
+              options={[
+                { label: "40 mL", value: "40 mL" },
+                { label: "50 mL", value: "50 mL" },
+                { label: "60 mL (Padrão)", value: "60 mL" },
+                { label: "70 mL", value: "70 mL" },
+                { label: "80 mL", value: "80 mL" },
+                { label: "100 mL", value: "100 mL" },
+                { label: "Frasco", value: "Frasco" },
+              ]}
+              allowCustom
+            />
             {/* COR */}
             <QuickChipSelect
               label="Cor da Amostra"
@@ -1236,58 +1255,69 @@ export default function BancadaPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* LEUCÓCITOS POR CAMPO */}
+            {/* LEUCÓCITOS (EM MILHAR /ML) */}
             <QuickChipSelect
-              label="Leucócitos (Piócitos)"
-              sublabel="Ref: até 4 ou 5 p/c"
+              label="Leucócitos (L)"
+              sublabel="Unidade em mil /mL (Ex: 8 = 8.000 /mL)"
               value={form.leucocitos_campo}
               onChange={(val) => setForm({ ...form, leucocitos_campo: val })}
+              allowCustom
               options={[
-                { label: "0 a 4 p/c", value: "0 a 4 p/c" },
-                { label: "5 a 10 p/c", value: "5 a 10 p/c", isAbnormal: true },
-                { label: "10 a 20 p/c", value: "10 a 20 p/c", isAbnormal: true },
-                { label: "20 a 50 p/c", value: "20 a 50 p/c", isAbnormal: true },
-                { label: "> 50 / Incontáveis", value: "Incontáveis", isAbnormal: true },
+                { label: "1.000 /mL", value: "1.000 /mL" },
+                { label: "4.000 /mL", value: "4.000 /mL" },
+                { label: "8.000 /mL", value: "8.000 /mL" },
+                { label: "10.000 /mL", value: "10.000 /mL", isAbnormal: true },
+                { label: "14.000 /mL", value: "14.000 /mL", isAbnormal: true },
+                { label: "25.000 /mL", value: "25.000 /mL", isAbnormal: true },
+                { label: "> 100.000 /mL", value: "> 100.000 /mL", isAbnormal: true },
               ]}
             />
 
-            {/* HEMÁCIAS POR CAMPO */}
+            {/* HEMÁCIAS (EM MILHAR /ML) */}
             <QuickChipSelect
-              label="Hemácias"
-              sublabel="Ref: até 2 p/c"
+              label="Hemácias (H)"
+              sublabel="Unidade em mil /mL (Ex: 10 = 10.000 /mL)"
               value={form.hemacias_campo}
               onChange={(val) => setForm({ ...form, hemacias_campo: val })}
+              allowCustom
               options={[
-                { label: "0 a 2 p/c", value: "0 a 2 p/c" },
-                { label: "3 a 5 p/c", value: "3 a 5 p/c", isAbnormal: true },
-                { label: "6 a 10 p/c", value: "6 a 10 p/c", isAbnormal: true },
-                { label: "10 a 25 p/c", value: "10 a 25 p/c", isAbnormal: true },
-                { label: "Maciça / Incontáveis", value: "Maciça", isAbnormal: true },
+                { label: "1.000 /mL", value: "1.000 /mL" },
+                { label: "2.000 /mL", value: "2.000 /mL" },
+                { label: "5.000 /mL", value: "5.000 /mL" },
+                { label: "10.000 /mL", value: "10.000 /mL", isAbnormal: true },
+                { label: "14.000 /mL", value: "14.000 /mL", isAbnormal: true },
+                { label: "20.000 /mL", value: "20.000 /mL", isAbnormal: true },
+                { label: "> 50.000 /mL", value: "> 50.000 /mL", isAbnormal: true },
               ]}
             />
 
-            {/* CÉLULAS EPITELIAIS */}
+            {/* CÉLULAS EPITELIAIS (C) */}
             <QuickChipSelect
-              label="Células Epiteliais de Descamação"
+              label="Células Epiteliais (C)"
+              sublabel="Unidade em mil /mL (Ex: 6 = 6.000 /mL)"
               value={form.celulas_epiteliais}
               onChange={(val) => setForm({ ...form, celulas_epiteliais: val })}
+              allowCustom
               options={[
-                { label: "Raras (Normal)", value: "Raras" },
-                { label: "Algumas", value: "Algumas" },
-                { label: "Numerosas", value: "Numerosas", isAbnormal: true },
+                { label: "1.000 /mL", value: "1.000 /mL" },
+                { label: "4.000 /mL", value: "4.000 /mL" },
+                { label: "6.000 /mL", value: "6.000 /mL" },
+                { label: "10.000 /mL", value: "10.000 /mL" },
+                { label: "20.000 /mL", value: "20.000 /mL", isAbnormal: true },
+                { label: "25.000 /mL", value: "25.000 /mL", isAbnormal: true },
               ]}
             />
 
-            {/* FLORA BACTERIANA */}
+            {/* FLORA BACTERIANA (B) */}
             <QuickChipSelect
-              label="Flora Bacteriana"
+              label="Flora Bacteriana (B)"
               value={form.bacterias}
               onChange={(val) => setForm({ ...form, bacterias: val })}
               options={[
                 { label: "Ausentes", value: "Ausentes" },
-                { label: "Raras / Flora Habitual", value: "Raras / Flora habitual" },
-                { label: "Moderadas", value: "Moderadas", isAbnormal: true },
-                { label: "Aumentadas / Abundante", value: "Aumentadas", isAbnormal: true },
+                { label: "fb (Habitual)", value: "fb" },
+                { label: "F.B.A (Aumentada)", value: "F.B.A", isAbnormal: true },
+                { label: "Abundante", value: "Abundante", isAbnormal: true },
               ]}
             />
 

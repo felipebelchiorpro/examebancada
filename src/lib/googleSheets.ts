@@ -46,6 +46,7 @@ export const CABECALHO_LAUDOS = [
   "coagulograma_tp",
   "coagulograma_ttpa",
   "resultado_abo_rh",
+  "volume",
 ];
 
 export const CABECALHO_ROTINA = [
@@ -102,6 +103,20 @@ export function getGoogleSheetsCredentials() {
 
   let clientEmail = "";
   let privateKey = "";
+
+    // Suporte direto a GOOGLE_CREDENTIALS_BASE64 configurado na Vercel
+  if (process.env.GOOGLE_CREDENTIALS_BASE64) {
+    try {
+      const decoded = Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64.trim(), "base64").toString("utf-8");
+      const parsed = JSON.parse(decoded);
+      if (parsed.client_email && parsed.private_key) {
+        clientEmail = parsed.client_email;
+        privateKey = extractPrivateKey(parsed.private_key);
+      }
+    } catch (b64Err) {
+      console.error("Erro ao decodificar GOOGLE_CREDENTIALS_BASE64:", b64Err);
+    }
+  }
 
   for (const candidate of jsonCandidates) {
     if (candidate && candidate.trim().startsWith("{")) {
@@ -299,7 +314,7 @@ export async function salvarOuAtualizarLaudo(laudo: LaudoUrina): Promise<{ ok: b
     // Ler todas as linhas da aba Laudos_Urina
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
-      range: `${SHEET_NAME_LAUDOS}!A:AF`,
+      range: `${SHEET_NAME_LAUDOS}!A:AH`,
     });
 
     const rows = res.data.values || [];
@@ -361,10 +376,11 @@ export async function salvarOuAtualizarLaudo(laudo: LaudoUrina): Promise<{ ok: b
       laudo.resultado_pcr || "",
       laudo.tp_inr ? `TP: ${laudo.tp_tempo || ""} (INR: ${laudo.tp_inr})` : (laudo.tp_tempo || ""),
       laudo.ttpa_tempo ? `TTPA: ${laudo.ttpa_tempo || ""} (Rel: ${laudo.ttpa_relacao || ""})` : "",
+      laudo.resultado_abo_rh || "",
+      laudo.volume || "60 mL",
     ];
-
     const rowData = temId ? [laudoId, ...rowValoresBase] : rowValoresBase;
-    const finalCol = temId ? "AF" : "AE";
+    const finalCol = temId ? "AH" : "AG";
 
     if (targetRowIndex > 0) {
       // Atualizar linha existente
@@ -479,6 +495,7 @@ export async function listarLaudos(dataFiltro?: string): Promise<LaudoUrina[]> {
         ttpa_tempo: r[offset + 30] || undefined,
         resultado_abo_rh: r[offset + 31] || undefined,
         tem_abo_rh: Boolean(r[offset + 31]),
+        volume: r[offset + 32] || "60 mL",
       });
     }
 

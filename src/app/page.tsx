@@ -52,6 +52,30 @@ const VALORES_PADRAO_NORMAL = {
   outros_elementos: "Ausentes",
 };
 
+const VALORES_SEM_URINA = {
+  volume: "",
+  cor: "",
+  aspecto: "",
+  densidade: "",
+  ph: "",
+  proteina: "",
+  glicose: "",
+  cetona: "",
+  bilirrubina: "",
+  urobilinogenio: "",
+  sangue: "",
+  nitrito: "",
+  leucocitos_fita: "",
+  celulas_epiteliais: "",
+  leucocitos_campo: "",
+  hemacias_campo: "",
+  bacterias: "",
+  muco: "",
+  cristais: "",
+  cilindros: "",
+  outros_elementos: "",
+};
+
 export default function BancadaOperacionalPage() {
   // Detecção automática: Computador = Painel de Tiragem & Impressão | Celular = Contagem de Bancada
   const [modoTela, setModoTela] = useState<"desktop" | "mobile">("desktop");
@@ -2809,8 +2833,23 @@ export default function BancadaOperacionalPage() {
                             data_hora: dataHoje || "2026-10-26",
                             status: (r.tem_laudo ? "finalizado" : "rascunho") as StatusLaudo,
                             observacoes: "",
+                            tem_urina: r.tem_urina,
+                            tem_vdrl: r.tem_vdrl,
+                            resultado_vdrl: r.tem_vdrl ? "Não Reagente" : undefined,
                             tem_abo_rh: r.tem_abo_rh,
-                            ...VALORES_PADRAO_NORMAL,
+                            resultado_abo_rh: r.tem_abo_rh ? "O Positivo (+)" : undefined,
+                            tem_pso: r.tem_pso,
+                            resultado_pso: r.tem_pso ? "Negativo" : undefined,
+                            tem_coagulograma: r.tem_coagulograma,
+                            tp_tempo: r.tem_coagulograma ? "12.5s" : undefined,
+                            tp_inr: r.tem_coagulograma ? "1.00" : undefined,
+                            tem_beta_hcg: r.tem_beta_hcg,
+                            resultado_beta_hcg: r.tem_beta_hcg ? "Negativo" : undefined,
+                            tem_proteinuria_rapida: r.tem_proteinuria_rapida,
+                            resultado_proteinuria_rapida: r.tem_proteinuria_rapida ? "Negativo" : undefined,
+                            tem_vhs: r.tem_vhs,
+                            resultado_vhs: r.tem_vhs ? "10 mm/h" : undefined,
+                            ...(r.tem_urina === false ? VALORES_SEM_URINA : VALORES_PADRAO_NORMAL),
                           }))
                     }
                     dataSelecionada={dataHoje}
@@ -2845,8 +2884,23 @@ export default function BancadaOperacionalPage() {
                     data_hora: dataHoje || "2026-10-26",
                     status: (r.tem_laudo ? "finalizado" : "rascunho") as StatusLaudo,
                     observacoes: "",
+                    tem_urina: r.tem_urina,
+                    tem_vdrl: r.tem_vdrl,
+                    resultado_vdrl: r.tem_vdrl ? "Não Reagente" : undefined,
                     tem_abo_rh: r.tem_abo_rh,
-                    ...VALORES_PADRAO_NORMAL,
+                    resultado_abo_rh: r.tem_abo_rh ? "O Positivo (+)" : undefined,
+                    tem_pso: r.tem_pso,
+                    resultado_pso: r.tem_pso ? "Negativo" : undefined,
+                    tem_coagulograma: r.tem_coagulograma,
+                    tp_tempo: r.tem_coagulograma ? "12.5s" : undefined,
+                    tp_inr: r.tem_coagulograma ? "1.00" : undefined,
+                    tem_beta_hcg: r.tem_beta_hcg,
+                    resultado_beta_hcg: r.tem_beta_hcg ? "Negativo" : undefined,
+                    tem_proteinuria_rapida: r.tem_proteinuria_rapida,
+                    resultado_proteinuria_rapida: r.tem_proteinuria_rapida ? "Negativo" : undefined,
+                    tem_vhs: r.tem_vhs,
+                    resultado_vhs: r.tem_vhs ? "10 mm/h" : undefined,
+                    ...(r.tem_urina === false ? VALORES_SEM_URINA : VALORES_PADRAO_NORMAL),
                   }))
             }
             dataSelecionada={dataHoje}

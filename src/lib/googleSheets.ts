@@ -1,3 +1,6 @@
+export const DEFAULT_SHEET_ID = "1BLgTktM_WrcM_bt2jLVsVxjFLmt-uqukm1NqkJ4ebWQ";
+export const DEFAULT_CLIENT_EMAIL = "laboratorio-caconde@citric-inkwell-471303-m8.iam.gserviceaccount.com";
+
 import { google } from "googleapis";
 import { LaudoUrina, RotinaItem } from "@/types/urinalise";
 import { MOCK_LAUDOS, MOCK_ROTINA } from "./mockData";
@@ -115,6 +118,9 @@ export function getGoogleSheetsCredentials() {
 
   // 2. Extrair email de servico por multiplos aliases comuns na Vercel
   if (!clientEmail) {
+    clientEmail = process.env.CLIENT_EMAIL || DEFAULT_CLIENT_EMAIL;
+  }
+  if (false) {
     clientEmail = (
       process.env.GOOGLE_SHEETS_CLIENT_EMAIL ||
       process.env.GOOGLE_CLIENT_EMAIL ||
@@ -150,7 +156,7 @@ export function getGoogleSheetsCredentials() {
     process.env.NEXT_PUBLIC_GOOGLE_SHEETS_SHEET_ID ||
     "";
 
-  const sheetId = extractSpreadsheetId(rawSheetId);
+  const sheetId = extractSpreadsheetId(rawSheetId) || DEFAULT_SHEET_ID;
 
   return { clientEmail, privateKey, sheetId };
 }

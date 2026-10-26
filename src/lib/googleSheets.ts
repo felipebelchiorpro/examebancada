@@ -55,25 +55,115 @@ export const CABECALHO_ROTINA = [
   "status_laudo",
 ];
 
+export function extractSpreadsheetId(rawId?: string): string {
+  if (!rawId) return "";
+  const trimmed = rawId.trim();
+  // Se o usuario colou o link completo do Google Sheets, extrai o ID entre /d/ e /edit
+  const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  return trimmed.replace(/^[\"']|[\"']$/g, "");
+}
+
+export function extractPrivateKey(rawKey?: string): string {
+  if (!rawKey) return "";
+  let key = rawKey.trim();
+  // Se colou o JSON completo na variavel da chave privada
+  if (key.startsWith("{") && key.includes("private_key")) {
+    try {
+      const parsed = JSON.parse(key);
+      if (parsed.private_key) return extractPrivateKey(parsed.private_key);
+    } catch (_) {}
+  }
+  // Remover aspas externas se existirem
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+    key = key.slice(1, -1);
+  }
+  // Tratar quebras de linha escapadas
+  key = key.replace(/\\n/g, "\n").replace(/\\r/g, "\r");
+  return key;
+}
+
+export function getGoogleSheetsCredentials() {
+  // 1. Suporte a JSON completo colado em uma unica variavel de ambiente
+  const jsonCandidates = [
+    process.env.GOOGLE_CREDENTIALS,
+    process.env.GOOGLE_SERVICE_ACCOUNT,
+    process.env.GOOGLE_SERVICE_ACCOUNT_JSON,
+    process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON,
+    process.env.SERVICE_ACCOUNT_JSON,
+    process.env.GOOGLE_SHEETS_CREDENTIALS,
+  ];
+
+  let clientEmail = "";
+  let privateKey = "";
+
+  for (const candidate of jsonCandidates) {
+    if (candidate && candidate.trim().startsWith("{")) {
+      try {
+        const parsed = JSON.parse(candidate);
+        if (parsed.client_email && parsed.private_key) {
+          clientEmail = parsed.client_email;
+          privateKey = extractPrivateKey(parsed.private_key);
+          break;
+        }
+      } catch (_) {}
+    }
+  }
+
+  // 2. Extrair email de servico por multiplos aliases comuns na Vercel
+  if (!clientEmail) {
+    clientEmail = (
+      process.env.GOOGLE_SHEETS_CLIENT_EMAIL ||
+      process.env.GOOGLE_CLIENT_EMAIL ||
+      process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ||
+      process.env.SERVICE_ACCOUNT_EMAIL ||
+      process.env.CLIENT_EMAIL ||
+      process.env.NEXT_PUBLIC_GOOGLE_CLIENT_EMAIL ||
+      ""
+    ).trim().replace(/^[\"']|[\"']$/g, "");
+  }
+
+  // 3. Extrair chave privada por multiplos aliases
+  if (!privateKey) {
+    const rawKey =
+      process.env.GOOGLE_SHEETS_PRIVATE_KEY ||
+      process.env.GOOGLE_PRIVATE_KEY ||
+      process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+      process.env.SERVICE_ACCOUNT_KEY ||
+      process.env.PRIVATE_KEY ||
+      "";
+    privateKey = extractPrivateKey(rawKey);
+  }
+
+  // 4. Extrair ID da planilha com sanitizacao de URL
+  const rawSheetId =
+    process.env.GOOGLE_SHEETS_SHEET_ID ||
+    process.env.NEXT_PUBLIC_BANCO_SHEET_ID ||
+    process.env.BANCO_SHEET_ID ||
+    process.env.SHEET_ID ||
+    process.env.GOOGLE_SHEET_ID ||
+    process.env.SPREADSHEET_ID ||
+    process.env.NEXT_PUBLIC_SHEET_ID ||
+    process.env.NEXT_PUBLIC_GOOGLE_SHEETS_SHEET_ID ||
+    "";
+
+  const sheetId = extractSpreadsheetId(rawSheetId);
+
+  return { clientEmail, privateKey, sheetId };
+}
+
 export function isGoogleSheetsConfigured(): boolean {
-  const email = process.env.GOOGLE_SHEETS_CLIENT_EMAIL || process.env.GOOGLE_CLIENT_EMAIL || process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const key = process.env.GOOGLE_SHEETS_PRIVATE_KEY || process.env.GOOGLE_PRIVATE_KEY || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-  const id = process.env.GOOGLE_SHEETS_SHEET_ID || process.env.NEXT_PUBLIC_BANCO_SHEET_ID || process.env.BANCO_SHEET_ID || process.env.SHEET_ID;
-  return Boolean(email && key && id);
+  const { clientEmail, privateKey, sheetId } = getGoogleSheetsCredentials();
+  return Boolean(clientEmail && privateKey && sheetId);
 }
 
 export function getGoogleSheetsClient() {
-  const clientEmail = process.env.GOOGLE_SHEETS_CLIENT_EMAIL || process.env.GOOGLE_CLIENT_EMAIL || process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  let privateKey = process.env.GOOGLE_SHEETS_PRIVATE_KEY || process.env.GOOGLE_PRIVATE_KEY || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-  const sheetId = process.env.GOOGLE_SHEETS_SHEET_ID || process.env.NEXT_PUBLIC_BANCO_SHEET_ID || process.env.BANCO_SHEET_ID || process.env.SHEET_ID;
+  const { clientEmail, privateKey, sheetId } = getGoogleSheetsCredentials();
 
   if (!clientEmail || !privateKey || !sheetId) {
     return null;
-  }
-
-  // Tratar quebras de linha na chave privada caso venham como string literal \n
-  if (privateKey.includes("\\n")) {
-    privateKey = privateKey.replace(/\\n/g, "\n");
   }
 
   const auth = new google.auth.JWT({
@@ -83,7 +173,7 @@ export function getGoogleSheetsClient() {
   });
 
   const sheets = google.sheets({ version: "v4", auth });
-  return { sheets, sheetId };
+  return { sheets, sheetId, clientEmail };
 }
 
 /**
@@ -150,7 +240,15 @@ export async function ensureSheetsExist(): Promise<{ ok: boolean; message: strin
     return { ok: true, message: "Planilha conectada e abas verificadas com sucesso!" };
   } catch (error: any) {
     console.error("Erro ao verificar planilhas:", error);
-    return { ok: false, message: error.message || "Erro desconhecido ao conectar com o Google Sheets" };
+    let msg = error.message || "Erro desconhecido ao conectar com o Google Sheets";
+    if (error.code === 403 || msg.includes("The caller does not have permission") || msg.includes("permission")) {
+      msg = "Permissão Negada (403): O Google Sheets existe, mas você precisa compartilhá-lo com o e-mail da conta de serviço (" + (gClient?.clientEmail || "seu service account") + ") com permissão de \"Editor\".";
+    } else if (error.code === 404 || msg.includes("Requested entity was not found") || msg.includes("not found")) {
+      msg = "Planilha não encontrada (404): O ID \"" + sheetId + "\" não existe ou a conta não tem acesso. Verifique a URL da planilha.";
+    } else if (msg.includes("PEM") || msg.includes("DECODER") || msg.includes("start line") || msg.includes("unsupported")) {
+      msg = "Chave Privada inválida: Verifique o formato da variável GOOGLE_SHEETS_PRIVATE_KEY. Ela deve começar com -----BEGIN PRIVATE KEY-----.";
+    }
+    return { ok: false, message: msg };
   }
 }
 

@@ -137,6 +137,7 @@ export default function BancadaPage() {
         method: "POST",
         body: formData,
       });
+
       const data = await res.json();
 
       if (!data.ok) {
@@ -144,28 +145,34 @@ export default function BancadaPage() {
         return;
       }
 
-      if (!data.pacientes || data.pacientes.length === 0) {
+      const listaPacientes = data.pacientes || data.pacientesUnificados || [];
+
+      if (!listaPacientes || listaPacientes.length === 0) {
         showToast("Nenhum paciente de bancada encontrado no arquivo.", "warning");
         return;
       }
 
+      // Alimenta imediatamente a fila de pacientes na tela
+      setRotinaDia(listaPacientes);
+
       const saveRes = await fetch("/api/rotina", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itens: data.pacientes }),
+        body: JSON.stringify({ itens: listaPacientes }),
       });
+
       const saveData = await saveRes.json();
 
       if (saveData.ok) {
-        showToast(`${data.pacientes.length} pacientes de bancada importados com sucesso!`, "success");
-        await carregarRotinaDia();
-        await carregarLaudosDia();
+        showToast(`${listaPacientes.length} pacientes de bancada carregados e sincronizados com sucesso!`, "success");
       } else {
-        showToast("Arquivo lido, mas erro ao salvar na planilha.", "warning");
+        showToast(`${listaPacientes.length} pacientes carregados na bancada (${saveData.message || "modo local"}).`, "warning");
       }
+      await carregarRotinaDia();
+      await carregarLaudosDia();
     } catch (err: any) {
       console.error(err);
-      showToast("Falha de rede ao enviar arquivo.", "error");
+      showToast("Falha de rede ao enviar arquivo: " + (err.message || ""), "error");
     } finally {
       setIsUploading(false);
     }
@@ -665,6 +672,7 @@ export default function BancadaPage() {
                   onChange={(e) => {
                     const f = e.target.files?.[0];
                     if (f) handleUploadArquivo(f);
+                    e.target.value = "";
                   }}
                   className="hidden"
                 />

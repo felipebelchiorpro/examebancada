@@ -1,6 +1,27 @@
+// Execução dinâmica sem cache estático no Vercel Serverless
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { processarMatrizLinhasBancada } from "@/lib/extratorBancada";
+
+async function extractTextFromPdf(buffer: Buffer): Promise<string> {
+  const pdfParseModule: any = await import("pdf-parse");
+  // Suporte a pdf-parse v2 (classe PDFParse)
+  if (pdfParseModule.PDFParse) {
+    const parser = new pdfParseModule.PDFParse(new Uint8Array(buffer));
+    const result = await parser.getText();
+    return result.text || "";
+  }
+  // Suporte a pdf-parse v1 (função default)
+  const parseFn = pdfParseModule.default || pdfParseModule;
+  if (typeof parseFn === "function") {
+    const data = await parseFn(buffer);
+    return data.text || "";
+  }
+  throw new Error("Módulo pdf-parse incompatível.");
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,20 +40,32 @@ export async function POST(request: NextRequest) {
     let rows: any[][] = [];
 
     if (fileName.endsWith(".pdf")) {
-      // Leitura nativa de PDF via pdf-parse no ambiente Node.js / Vercel
       try {
-        // dynamic import para evitar problemas de empacotamento em runtime client
-        const pdfParseModule: any = await import("pdf-parse");
-        const pdfParse = pdfParseModule.default || pdfParseModule;
-        const pdfData = await pdfParse(buffer);
-        const text = pdfData.text || "";
-
-        // Converte linhas do PDF em matriz de células
+        const text = await extractTextFromPdf(buffer);
         const lines = text.split("\n").map((l: string) => l.trim()).filter(Boolean);
+
+        rows.push(["data", "nome_paciente", "prontuario", "codigo", "procedimento", "exame"]);
+
         for (const line of lines) {
-          // Divide por 2 ou mais espaços ou por tabulação
+          // No relatório Conecta SUS / SUS padrão, as colunas são separadas por tabulação ou múltiplos espaços
           const cols = line.split(/\t+|\s{2,}/).map((c: string) => c.trim()).filter(Boolean);
-          if (cols.length >= 2) {
+          
+          if (cols.length >= 4) {
+            const col0 = cols[0];
+            // Se a data estiver colada no nome do paciente (ex: 26/10/2026IOLANDA DE MEIRA SOUZA)
+            const dateMatch = col0.match(/^(\d{2}\/\d{2}\/\d{4})(.*)$/);
+            if (dateMatch) {
+              const data = dateMatch[1];
+              const nome = dateMatch[2].trim();
+              const prontuario = cols[1];
+              const codigo = cols[2];
+              const procedimento = cols[3];
+              const exame = cols[4] || cols[3];
+              rows.push([data, nome, prontuario, codigo, procedimento, exame]);
+            } else {
+              rows.push(cols);
+            }
+          } else if (cols.length >= 2) {
             rows.push(cols);
           }
         }
@@ -63,6 +96,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       fileName: file.name,
+      pacientes: resultado.pacientesUnificados,
+      pacientesUnificados: resultado.pacientesUnificados,
       ...resultado,
     });
   } catch (err: any) {

@@ -511,6 +511,37 @@ export async function salvarOuAtualizarLaudo(
       });
     }
 
+    // Atualizar também o status_laudo na aba Rotina_Dia se o paciente estiver lá
+    try {
+      const rotRes = await sheets.spreadsheets.values.get({
+        spreadsheetId: sheetId,
+        range: `${SHEET_NAME_ROTINA}!A:H`,
+      });
+      const rotRows = rotRes.data.values || [];
+      if (rotRows.length > 1) {
+        const rHeader = (rotRows[0] || []).map((h: any) => (h || "").toString().toLowerCase().trim());
+        const rIdxPront = rHeader.findIndex((h) => h.includes("pront"));
+        const rIdxStatusLaudo = rHeader.findIndex((h) => h.includes("status_laudo"));
+        if (rIdxPront >= 0 && rIdxStatusLaudo >= 0) {
+          for (let ri = 1; ri < rotRows.length; ri++) {
+            const rowPront = formatarProntuario(rotRows[ri][rIdxPront] || "");
+            if (rowPront === prontPadrao) {
+              const colLetter = String.fromCharCode(65 + rIdxStatusLaudo);
+              await sheets.spreadsheets.values.update({
+                spreadsheetId: sheetId,
+                range: `${SHEET_NAME_ROTINA}!${colLetter}${ri + 1}`,
+                valueInputOption: "RAW",
+                requestBody: { values: [[laudo.status || "finalizado"]] },
+              });
+              break;
+            }
+          }
+        }
+      }
+    } catch (rotSyncErr) {
+      console.warn("Aviso ao atualizar status_laudo na Rotina_Dia:", rotSyncErr);
+    }
+
     return {
       ok: true,
       acao: targetRowIndex > 0 ? "atualizado" : "criado",

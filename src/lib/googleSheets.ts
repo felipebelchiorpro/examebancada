@@ -56,17 +56,16 @@ export const CABECALHO_ROTINA = [
 ];
 
 export function isGoogleSheetsConfigured(): boolean {
-  return Boolean(
-    process.env.GOOGLE_SHEETS_CLIENT_EMAIL &&
-      process.env.GOOGLE_SHEETS_PRIVATE_KEY &&
-      process.env.GOOGLE_SHEETS_SHEET_ID
-  );
+  const email = process.env.GOOGLE_SHEETS_CLIENT_EMAIL || process.env.GOOGLE_CLIENT_EMAIL || process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const key = process.env.GOOGLE_SHEETS_PRIVATE_KEY || process.env.GOOGLE_PRIVATE_KEY || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  const id = process.env.GOOGLE_SHEETS_SHEET_ID || process.env.NEXT_PUBLIC_BANCO_SHEET_ID || process.env.BANCO_SHEET_ID || process.env.SHEET_ID;
+  return Boolean(email && key && id);
 }
 
 export function getGoogleSheetsClient() {
-  const clientEmail = process.env.GOOGLE_SHEETS_CLIENT_EMAIL;
-  let privateKey = process.env.GOOGLE_SHEETS_PRIVATE_KEY;
-  const sheetId = process.env.GOOGLE_SHEETS_SHEET_ID;
+  const clientEmail = process.env.GOOGLE_SHEETS_CLIENT_EMAIL || process.env.GOOGLE_CLIENT_EMAIL || process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  let privateKey = process.env.GOOGLE_SHEETS_PRIVATE_KEY || process.env.GOOGLE_PRIVATE_KEY || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  const sheetId = process.env.GOOGLE_SHEETS_SHEET_ID || process.env.NEXT_PUBLIC_BANCO_SHEET_ID || process.env.BANCO_SHEET_ID || process.env.SHEET_ID;
 
   if (!clientEmail || !privateKey || !sheetId) {
     return null;

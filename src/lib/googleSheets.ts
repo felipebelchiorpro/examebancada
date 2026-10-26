@@ -104,7 +104,10 @@ export function extractPrivateKey(rawKey?: string): string {
     try {
       const parsed = JSON.parse(key);
       if (parsed.private_key) return extractPrivateKey(parsed.private_key);
-    } catch (_) {}
+    } catch (_) {
+      const match = key.match(/"private_key"\s*:\s*"([^"]+)"/);
+      if (match && match[1]) return extractPrivateKey(match[1]);
+    }
   }
   if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
     key = key.slice(1, -1);
@@ -113,8 +116,80 @@ export function extractPrivateKey(rawKey?: string): string {
   return key;
 }
 
+function tryExtractFromCandidate(rawCandidate: string): { email?: string; key?: string } {
+  const trimmed = rawCandidate.trim().replace(/^["']|["']$/g, "").trim();
+  if (!trimmed) return {};
+
+  // Caso 1: JSON direto (mesmo que tenha quebras de linha literais)
+  if (trimmed.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed.private_key) {
+        return {
+          email: parsed.client_email ? String(parsed.client_email).trim() : undefined,
+          key: extractPrivateKey(String(parsed.private_key)),
+        };
+      }
+    } catch (_) {
+      const emailMatch = trimmed.match(/"client_email"\s*:\s*"([^"]+)"/);
+      const keyMatch = trimmed.match(/"private_key"\s*:\s*"([\s\S]*?)"\s*[,}]/);
+      if (keyMatch && keyMatch[1]) {
+        return {
+          email: emailMatch?.[1]?.trim(),
+          key: extractPrivateKey(keyMatch[1]),
+        };
+      }
+    }
+  }
+
+  // Caso 2: Chave PEM direta ("-----BEGIN PRIVATE KEY-----...")
+  if (trimmed.includes("BEGIN PRIVATE KEY")) {
+    return { key: extractPrivateKey(trimmed) };
+  }
+
+  // Caso 3: Decodificar Base64 (removendo espaços/quebras de linha do Base64)
+  try {
+    const cleanB64 = trimmed.replace(/\s+/g, "");
+    const decoded = Buffer.from(cleanB64, "base64").toString("utf-8").trim();
+
+    if (decoded.startsWith("{") || decoded.includes('"private_key"')) {
+      try {
+        const parsed = JSON.parse(decoded);
+        if (parsed.private_key) {
+          return {
+            email: parsed.client_email ? String(parsed.client_email).trim() : undefined,
+            key: extractPrivateKey(String(parsed.private_key)),
+          };
+        }
+      } catch (_) {
+        const emailMatch = decoded.match(/"client_email"\s*:\s*"([^"]+)"/);
+        const keyMatch = decoded.match(/"private_key"\s*:\s*"([\s\S]*?)"\s*[,}]/);
+        if (keyMatch && keyMatch[1]) {
+          return {
+            email: emailMatch?.[1]?.trim(),
+            key: extractPrivateKey(keyMatch[1]),
+          };
+        }
+      }
+    }
+
+    if (decoded.includes("BEGIN PRIVATE KEY")) {
+      return { key: extractPrivateKey(decoded) };
+    }
+  } catch (_) {}
+
+  // Caso 4: Se o usuário colou apenas o corpo Base64 interno da chave PEM (ex: MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC...)
+  const cleanB64 = trimmed.replace(/\s+/g, "");
+  if (cleanB64.startsWith("MII") && cleanB64.length > 500) {
+    const wrappedPem = `-----BEGIN PRIVATE KEY-----\n${cleanB64}\n-----END PRIVATE KEY-----\n`;
+    return { key: wrappedPem };
+  }
+
+  return {};
+}
+
 export function getGoogleSheetsCredentials() {
-  const allJsonCandidates = [
+  const allCandidates = [
     process.env.GOOGLE_CREDENTIALS_BASE64,
     process.env.CREDENTIALS_BASE64,
     process.env.GOOGLE_CREDENTIALS,
@@ -124,38 +199,26 @@ export function getGoogleSheetsCredentials() {
     process.env.SERVICE_ACCOUNT_JSON,
     process.env.GOOGLE_SHEETS_CREDENTIALS,
     process.env.CREDENTIALS,
+    process.env.GOOGLE_SHEETS_PRIVATE_KEY,
+    process.env.GOOGLE_PRIVATE_KEY,
+    process.env.GOOGLE_SERVICE_ACCOUNT_KEY,
+    process.env.SERVICE_ACCOUNT_KEY,
+    process.env.PRIVATE_KEY,
   ];
 
   let clientEmail = "";
   let privateKey = "";
 
-  for (const candidate of allJsonCandidates) {
+  for (const candidate of allCandidates) {
     if (!candidate) continue;
-    const trimmed = candidate.trim().replace(/^["']|["']$/g, "");
-    if (!trimmed) continue;
-
-    if (trimmed.startsWith("{")) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (parsed.client_email && parsed.private_key) {
-          clientEmail = parsed.client_email;
-          privateKey = extractPrivateKey(parsed.private_key);
-          break;
-        }
-      } catch (_) {}
+    const extracted = tryExtractFromCandidate(candidate);
+    if (extracted.email && !clientEmail) {
+      clientEmail = extracted.email;
     }
-
-    try {
-      const decoded = Buffer.from(trimmed, "base64").toString("utf-8");
-      if (decoded.trim().startsWith("{")) {
-        const parsed = JSON.parse(decoded);
-        if (parsed.client_email && parsed.private_key) {
-          clientEmail = parsed.client_email;
-          privateKey = extractPrivateKey(parsed.private_key);
-          break;
-        }
-      }
-    } catch (_) {}
+    if (extracted.key && !privateKey) {
+      privateKey = extracted.key;
+    }
+    if (clientEmail && privateKey) break;
   }
 
   if (!clientEmail) {
@@ -170,17 +233,6 @@ export function getGoogleSheetsCredentials() {
     )
       .trim()
       .replace(/^["']|["']$/g, "");
-  }
-
-  if (!privateKey) {
-    const rawKey =
-      process.env.GOOGLE_SHEETS_PRIVATE_KEY ||
-      process.env.GOOGLE_PRIVATE_KEY ||
-      process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
-      process.env.SERVICE_ACCOUNT_KEY ||
-      process.env.PRIVATE_KEY ||
-      "";
-    privateKey = extractPrivateKey(rawKey);
   }
 
   const rawSheetId =

@@ -106,11 +106,14 @@ export const LaudoPrintView: React.FC<LaudoPrintViewProps> = ({
 
       {/* TÍTULO DO EXAME */}
       <div className="bg-slate-800 text-white font-bold py-1 px-3 text-center rounded-t text-xs uppercase tracking-wider mb-2 print:bg-slate-200 print:text-black print:border print:border-black">
-        URINA TIPO I - ELEMENTOS ANORMAIS E SEDIMENTO (EAS / SUMÁRIO DE URINA)
+        {laudo.tem_urina !== false && Boolean(laudo.cor || laudo.aspecto || laudo.densidade)
+          ? "URINA TIPO I - ELEMENTOS ANORMAIS E SEDIMENTO (EAS / SUMÁRIO DE URINA)"
+          : "EXAMES DE BANCADA & TESTES RÁPIDOS LABORATORIAIS"}
       </div>
 
-      {/* TABELAS DO EXAME FÍSICO-QUÍMICO E SEDIMENTOSCOPIA */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 avoid-break">
+      {/* TABELAS DO EXAME FÍSICO-QUÍMICO E SEDIMENTOSCOPIA (SOMENTE SE URINA ESTIVER SOLICITADA) */}
+      {laudo.tem_urina !== false && Boolean(laudo.cor || laudo.aspecto || laudo.densidade) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 avoid-break">
         {/* PARTE 1: EXAME FÍSICO-QUÍMICO */}
         <div className="border border-slate-300 rounded overflow-hidden print:border-slate-800">
           <div className="bg-slate-200 px-2.5 py-1 font-bold text-[11px] text-slate-800 border-b border-slate-300 uppercase print:bg-slate-100">
@@ -247,6 +250,7 @@ export const LaudoPrintView: React.FC<LaudoPrintViewProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* SEÇÃO 3: PESQUISA DE SANGUE OCULTO (PSO) SE SOLICITADO */}
       {(laudo.tem_pso || laudo.resultado_pso) && (

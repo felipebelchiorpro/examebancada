@@ -713,6 +713,9 @@ export default function BancadaOperacionalPage() {
           )
         );
 
+        // Recarregar os dados do servidor em segundo plano para manter 100% sincronizado
+        carregarDadosSincronizados(false);
+
         const msgStatus =
           status === "finalizado"
             ? proximoTubo

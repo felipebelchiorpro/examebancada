@@ -47,6 +47,12 @@ export async function POST(request: NextRequest) {
     }
 
     const resultado = await salvarOuAtualizarLaudo(laudo);
+    if (!resultado.ok) {
+      return NextResponse.json(
+        { ok: false, error: resultado.message },
+        { status: 500 }
+      );
+    }
     return NextResponse.json({
       ok: true,
       acao: resultado.acao,

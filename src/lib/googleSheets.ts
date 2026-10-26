@@ -426,6 +426,7 @@ export async function salvarOuAtualizarLaudo(
 
     const rows = res.data.values || [];
     let targetRowIndex = -1;
+    let firstEmptyRowIndex = -1;
 
     const headerRow = (rows[0] || []).map((h) => (h || "").toString().toLowerCase().trim());
     const temId = headerRow.length === 0 || headerRow[0] === "id";
@@ -445,6 +446,16 @@ export async function salvarOuAtualizarLaudo(
       const rData = normalizarDataIso(
         idxData >= 0 ? row[idxData] : row[temId ? 1 : 0] || ""
       );
+
+      // Detectar linha vazia (sem ID, prontuário ou nome) para reaproveitar
+      const isRowEmpty =
+        !rId &&
+        !rPront &&
+        !(row[temId ? 3 : 2] || "").toString().trim();
+
+      if (isRowEmpty && firstEmptyRowIndex === -1) {
+        firstEmptyRowIndex = i + 1;
+      }
 
       if ((rId && rId === laudoId) || (rPront === prontPadrao && rData === laudoDate)) {
         targetRowIndex = i + 1;
@@ -494,22 +505,24 @@ export async function salvarOuAtualizarLaudo(
     const rowData = temId ? [laudoId, ...rowValoresBase] : rowValoresBase;
     const finalCol = temId ? "AJ" : "AI";
 
-    if (targetRowIndex > 0) {
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: sheetId,
-        range: `${SHEET_NAME_LAUDOS}!A${targetRowIndex}:${finalCol}${targetRowIndex}`,
-        valueInputOption: "RAW",
-        requestBody: { values: [rowData] },
-      });
-    } else {
-      await sheets.spreadsheets.values.append({
-        spreadsheetId: sheetId,
-        range: `${SHEET_NAME_LAUDOS}!A:${finalCol}`,
-        valueInputOption: "RAW",
-        insertDataOption: "INSERT_ROWS",
-        requestBody: { values: [rowData] },
-      });
-    }
+    const rowNumberToWrite =
+      targetRowIndex > 0
+        ? targetRowIndex
+        : firstEmptyRowIndex > 0
+        ? firstEmptyRowIndex
+        : rows.length + 1;
+
+    const sanitizedRowData = rowData.map((val) =>
+      val === undefined || val === null ? "" : String(val)
+    );
+
+    // Grava de forma determinística na linha exata, sem inserir linhas fantasmas
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: sheetId,
+      range: `${SHEET_NAME_LAUDOS}!A${rowNumberToWrite}:${finalCol}${rowNumberToWrite}`,
+      valueInputOption: "RAW",
+      requestBody: { values: [sanitizedRowData] },
+    });
 
     // Atualizar também o status_laudo na aba Rotina_Dia se o paciente estiver lá
     try {
@@ -551,9 +564,9 @@ export async function salvarOuAtualizarLaudo(
   } catch (err: any) {
     console.error("Erro ao salvar no Google Sheets:", err);
     return {
-      ok: true,
+      ok: false,
       acao: existingIndex >= 0 ? "atualizado" : "criado",
-      message: `Laudo salvo em memória do servidor (${err.message}).`,
+      message: `Erro ao gravar no Google Sheets: ${err.message}`,
       laudo,
     };
   }

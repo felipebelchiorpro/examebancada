@@ -2,9 +2,9 @@ import { google } from "googleapis";
 import { LaudoUrina, RotinaItem } from "@/types/urinalise";
 import { MOCK_LAUDOS, MOCK_ROTINA } from "./mockData";
 
-// Em memória para desenvolvimento e fallback caso as chaves não estejam configuradas
-let localMemoryLaudos: LaudoUrina[] = [...MOCK_LAUDOS];
-let localMemoryRotina: RotinaItem[] = [...MOCK_ROTINA];
+// Armazenamento em memória limpo para produção caso as chaves não estejam temporariamente disponíveis
+let localMemoryLaudos: LaudoUrina[] = [];
+let localMemoryRotina: RotinaItem[] = [];
 
 export const SHEET_NAME_LAUDOS = "Laudos_Urina";
 export const SHEET_NAME_ROTINA = "Rotina_Dia";

@@ -9,6 +9,7 @@ import {
 } from "@/types/urinalise";
 import { QuickChipSelect } from "@/components/QuickChipSelect";
 import { StatusBadge } from "@/components/StatusBadge";
+import { RelatorioBancadaDiaPrintView } from "@/components/RelatorioBancadaDiaPrintView";
 import {
   Scan,
   UserCheck,
@@ -24,14 +25,28 @@ import {
   ArrowRight,
   FlaskConical,
   Clock,
+  UploadCloud,
+  FileSpreadsheet,
+  RefreshCw,
+  Printer,
+  Monitor,
+  Smartphone,
+  CheckCircle,
+  Boxes,
+  Table,
 } from "lucide-react";
 
 export default function BancadaPage() {
   const prontuarioInputRef = useRef<HTMLInputElement>(null);
 
   // Estados principais
+  const [modoTela, setModoTela] = useState<"desktop" | "mobile">("desktop");
   const [bancadaAtiva, setBancadaAtiva] = useState<"urina" | "imuno" | "coag" | "pso">("urina");
   const [rotinaDia, setRotinaDia] = useState<RotinaItem[]>([]);
+  const [laudosDia, setLaudosDia] = useState<LaudoUrina[]>([]);
+  const [modoRelatorio, setModoRelatorio] = useState<"caixas" | "tabela">("caixas");
+  const [dataHoje, setDataHoje] = useState<string>("");
+  const [isUploading, setIsUploading] = useState<boolean>(false);
   const [prontuario, setProntuario] = useState<string>("");
   const [pacienteInfo, setPacienteInfo] = useState<RotinaItem | null>(null);
   const [mostrarSugestoes, setMostrarSugestoes] = useState<boolean>(false);
@@ -97,16 +112,85 @@ export default function BancadaPage() {
     }
   };
 
-  // Auto-focus no campo de prontuário, carregar rotina e sincronizar bancada
+  // Carregar exames já concluídos pela bancada para fiscalização ao vivo no PC
+  const carregarLaudosDia = async () => {
+    try {
+      const res = await fetch("/api/laudos-dia");
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.laudos)) {
+        setLaudosDia(data.laudos);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Upload e extração direta de arquivo (PDF do Conecta SUS ou Planilha/CSV) no computador
+  const handleUploadArquivo = async (file: File) => {
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("filtrarApenasRealizado", "true");
+
+      const res = await fetch("/api/extrair-arquivo", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (!data.ok) {
+        showToast(data.error || "Erro ao processar arquivo.", "error");
+        return;
+      }
+
+      if (!data.pacientes || data.pacientes.length === 0) {
+        showToast("Nenhum paciente de bancada encontrado no arquivo.", "warning");
+        return;
+      }
+
+      const saveRes = await fetch("/api/rotina", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itens: data.pacientes }),
+      });
+      const saveData = await saveRes.json();
+
+      if (saveData.ok) {
+        showToast(`${data.pacientes.length} pacientes de bancada importados com sucesso!`, "success");
+        await carregarRotinaDia();
+        await carregarLaudosDia();
+      } else {
+        showToast("Arquivo lido, mas erro ao salvar na planilha.", "warning");
+      }
+    } catch (err: any) {
+      console.error(err);
+      showToast("Falha de rede ao enviar arquivo.", "error");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  // Inicialização, detecção de tela e sincronização
   useEffect(() => {
     document.title = "Urinálise & Bancada SUS";
     prontuarioInputRef.current?.focus();
+    setDataHoje(new Date().toISOString().split("T")[0]);
     carregarRotinaDia();
+    carregarLaudosDia();
 
     if (typeof window !== "undefined") {
+      // No computador, entra no modo fiscal/arquivos; no celular, na bancada
+      if (window.innerWidth < 768) {
+        setModoTela("mobile");
+      } else {
+        setModoTela("desktop");
+      }
+
       const b = new URLSearchParams(window.location.search).get("bancada");
       if (b === "urina" || b === "imuno" || b === "coag" || b === "pso") {
         setBancadaAtiva(b);
+        setModoTela("mobile");
       }
     }
   }, []);
@@ -467,8 +551,233 @@ export default function BancadaPage() {
         </div>
       )}
 
-      {/* Container Principal */}
-      <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-4 sm:pt-6">
+      {/* SELETOR DE MODO: COMPUTADOR (PAINEL FISCAL & ARQUIVOS) vs CELULAR (BANCADA COM LUVAS) */}
+      <div className="max-w-6xl mx-auto px-3 sm:px-6 pt-3 pb-1 print:hidden flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 mb-2">
+        <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-xl p-1 shadow-2xs">
+          <button
+            type="button"
+            onClick={() => setModoTela("desktop")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+              modoTela === "desktop"
+                ? "bg-slate-900 text-white shadow-2xs"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            <Monitor className="w-3.5 h-3.5" />
+            <span>🖥️ Computador (Painel Fiscal & Arquivos)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setModoTela("mobile")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+              modoTela === "mobile"
+                ? "bg-sky-700 text-white shadow-2xs"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span>📱 Celular (Bancada com Luvas)</span>
+          </button>
+        </div>
+
+        {modoTela === "desktop" && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                carregarRotinaDia();
+                carregarLaudosDia();
+                showToast("Dados atualizados da bancada!", "success");
+              }}
+              className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl shadow-2xs transition flex items-center gap-1.5"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Atualizar</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              disabled={rotinaDia.length === 0 && laudosDia.length === 0}
+              className="px-4 py-1.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5"
+            >
+              <Printer className="w-4 h-4" />
+              <span>Imprimir Relatório do Dia (Caixas Menores)</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {modoTela === "desktop" ? (
+        /* PAINEL DO COMPUTADOR: GESTÃO FISCAL, SUBIR ARQUIVOS E ACOMPANHAR BANCADA AO VIVO */
+        <div className="max-w-6xl mx-auto px-3 sm:px-6 pt-3 pb-20 print:hidden space-y-4">
+          {/* CABEÇALHO DO COMPUTADOR */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
+                  <h1 className="text-xl font-black text-slate-900 tracking-tight">
+                    Painel Fiscal & Gestão de Bancada
+                  </h1>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Suba o arquivo bruto do Conecta SUS, acompanhe o progresso da bancada em tempo real e imprima o relatório em caixas menores para anexar junto às requisições.
+                </p>
+              </div>
+
+              {/* Indicadores em Tempo Real */}
+              <div className="flex items-center gap-3">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-center">
+                  <div className="text-xl font-black text-slate-900">{rotinaDia.length}</div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">Total Amostras</div>
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 text-center">
+                  <div className="text-xl font-black text-emerald-800">
+                    {rotinaDia.filter((p) => p.tem_laudo || laudosDia.some((l) => l.prontuario === p.prontuario)).length}
+                  </div>
+                  <div className="text-[10px] font-bold text-emerald-700 uppercase">Concluídas</div>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 text-center">
+                  <div className="text-xl font-black text-amber-800">
+                    {rotinaDia.filter((p) => !p.tem_laudo && !laudosDia.some((l) => l.prontuario === p.prontuario)).length}
+                  </div>
+                  <div className="text-[10px] font-bold text-amber-700 uppercase">Pendentes</div>
+                </div>
+              </div>
+            </div>
+
+            {/* SEÇÃO DE SUBIR ARQUIVOS (PDF OU PLANILHA SUS) */}
+            <div className="mt-4 p-5 bg-gradient-to-r from-sky-50 to-slate-50 border-2 border-dashed border-sky-300 rounded-2xl text-center">
+              <UploadCloud className="w-8 h-8 text-sky-600 mx-auto mb-2" />
+              <h3 className="font-bold text-sm text-slate-900">
+                Subir Arquivo de Coletas do Dia (PDF ou Planilha Conecta SUS)
+              </h3>
+              <p className="text-xs text-slate-500 max-w-lg mx-auto mt-1 mb-3">
+                O sistema lê o arquivo, ignora exames automatizados de rotina e extrai diretamente Urina, PSO, VDRL, Coagulograma e Testes Rápidos.
+              </p>
+              <label className="inline-flex items-center gap-2 px-5 py-2.5 bg-sky-700 hover:bg-sky-800 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer transition active:scale-95">
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>{isUploading ? "Processando e Enviando..." : "Selecionar Arquivo (PDF ou Excel)"}</span>
+                <input
+                  type="file"
+                  accept=".pdf,.xlsx,.xls,.csv"
+                  disabled={isUploading}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleUploadArquivo(f);
+                  }}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* TABELA DE ACOMPANHAMENTO DA BANCADA (EM TEMPO REAL) */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h2 className="font-black text-sm text-slate-900 uppercase tracking-wide">
+                  Acompanhamento Fiscal dos Exames (Ao Vivo)
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Conforme a equipe salva os exames pelo celular, os resultados aparecem aqui para conferência e digitação
+                </p>
+              </div>
+              <div className="text-xs font-semibold text-slate-500">
+                {rotinaDia.length} paciente(s) na fila
+              </div>
+            </div>
+
+            {rotinaDia.length === 0 ? (
+              <div className="p-12 text-center text-slate-400">
+                <FileSpreadsheet className="w-12 h-12 mx-auto mb-3 opacity-40" />
+                <p className="font-bold text-sm text-slate-700">Nenhum exame cadastrado na rotina de hoje</p>
+                <p className="text-xs mt-1">Suba o arquivo PDF ou planilha do dia na caixa acima para iniciar.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px] border-b border-slate-200">
+                      <th className="py-2.5 px-3 text-center w-12">Tubo</th>
+                      <th className="py-2.5 px-3 text-center w-24">Prontuário</th>
+                      <th className="py-2.5 px-3">Paciente / Unidade</th>
+                      <th className="py-2.5 px-3">Exames Solicitados</th>
+                      <th className="py-2.5 px-3 text-center w-32">Status Bancada</th>
+                      <th className="py-2.5 px-3">Resultados Realizados</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {rotinaDia.map((item, idx) => {
+                      const laudoGravado = laudosDia.find(
+                        (l) => l.prontuario === item.prontuario
+                      );
+                      const isConcluido = item.tem_laudo || Boolean(laudoGravado);
+
+                      return (
+                        <tr key={item.prontuario + idx} className="hover:bg-slate-50/80 transition">
+                          <td className="py-2.5 px-3 text-center font-bold text-slate-700">
+                            #{idx + 1}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-900">
+                            {item.prontuario}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <div className="font-bold text-slate-900">{item.nome_paciente}</div>
+                            <div className="text-[10.5px] text-slate-500">
+                              {item.idade_sexo} • {item.posto_unidade}
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-700">
+                            <span className="font-semibold">{item.exame}</span>
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            {isConcluido ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                                <Check className="w-3 h-3" /> Concluído
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600">
+                                <Clock className="w-3 h-3" /> Aguardando
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-800 font-mono text-[11px]">
+                            {laudoGravado ? (
+                              <div className="space-y-0.5">
+                                <div>
+                                  <span className="font-bold text-sky-800">Urina:</span>{" "}
+                                  D: {laudoGravado.densidade || "1.020"} | pH: {laudoGravado.ph || "6.0"} | Prot: {laudoGravado.proteina || "Neg"} | Leu: {laudoGravado.leucocitos_campo || "1-3 p/c"}
+                                </div>
+                                {(laudoGravado.resultado_pso || laudoGravado.resultado_vdrl || laudoGravado.tp_tempo) && (
+                                  <div className="text-[10px] text-slate-600">
+                                    {[
+                                      laudoGravado.resultado_pso ? `PSO: ${laudoGravado.resultado_pso}` : null,
+                                      laudoGravado.resultado_vdrl ? `VDRL: ${laudoGravado.resultado_vdrl}` : null,
+                                      laudoGravado.resultado_beta_hcg ? `Beta: ${laudoGravado.resultado_beta_hcg}` : null,
+                                      laudoGravado.tp_tempo ? `TP: ${laudoGravado.tp_tempo} (${laudoGravado.tp_inr})` : null,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" • ")}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 italic">Aguardando análise na bancada</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* MODO CELULAR: BANCADA OPERACIONAL COM LUVAS */
+        <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-4 sm:pt-6">
         {/* SELEÇÃO RÁPIDA DE BANCADA (TABS DE TOQUE RÁPIDO) */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
           {[
@@ -1592,50 +1901,76 @@ export default function BancadaPage() {
             )}
           </div>
         </section>
-      </div>
-
-      {/* BARRA FIXA DE AÇÃO NO RODAPÉ (MOBILE-FIRST PARA LUVAS) */}
-      <div className="fixed bottom-14 md:bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-300 shadow-2xl p-3 sm:px-6">
-        <div className="max-w-4xl mx-auto flex items-center gap-2 sm:gap-4">
-          {/* BOTÃO SALVAR RASCUNHO */}
-          <button
-            type="button"
-            disabled={isSaving}
-            onClick={() => handleSalvar("rascunho")}
-            className="flex-1 sm:flex-initial sm:px-5 py-3 sm:py-3.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 text-xs sm:text-sm active:scale-95 disabled:opacity-50"
-          >
-            <Save className="w-4 h-4" />
-            <span>Rascunho</span>
-          </button>
-
-          {/* BOTÃO MARCAR RECOLETA */}
-          <button
-            type="button"
-            disabled={isSaving}
-            onClick={() => handleSalvar("recoleta")}
-            className="flex-1 sm:flex-initial sm:px-5 py-3 sm:py-3.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 text-xs sm:text-sm active:scale-95 disabled:opacity-50"
-          >
-            <AlertTriangle className="w-4 h-4" />
-            <span>Recoleta</span>
-          </button>
-
-          {/* BOTÃO PRINCIPAL: FINALIZAR AMOSTRA & PRÓXIMO TUBO */}
-          <button
-            type="button"
-            disabled={isSaving}
-            onClick={() => handleSalvar("finalizado")}
-            className="flex-2 sm:flex-1 py-3 sm:py-3.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black rounded-xl shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 text-sm sm:text-base active:scale-95 disabled:opacity-50"
-          >
-            <CheckCircle2 className="w-5 h-5" />
-            <span>
-              {isSaving
-                ? "Gravando..."
-                : proximoTubo
-                ? `Salvar & Tubo #${indiceAtual + 2} ➔`
-                : "Finalizar Amostra"}
-            </span>
-          </button>
         </div>
+      )}
+
+      {/* BARRA FIXA DE AÇÃO NO RODAPÉ (EXCLUSIVA PARA CELULAR / BANCADA COM LUVAS) */}
+      {modoTela === "mobile" && (
+        <div className="fixed bottom-14 md:bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-300 shadow-2xl p-3 sm:px-6">
+          <div className="max-w-4xl mx-auto flex items-center gap-2 sm:gap-4">
+            {/* BOTÃO SALVAR RASCUNHO */}
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={() => handleSalvar("rascunho")}
+              className="flex-1 sm:flex-initial sm:px-5 py-3 sm:py-3.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 text-xs sm:text-sm active:scale-95 disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              <span>Rascunho</span>
+            </button>
+
+            {/* BOTÃO MARCAR RECOLETA */}
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={() => handleSalvar("recoleta")}
+              className="flex-1 sm:flex-initial sm:px-5 py-3 sm:py-3.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 text-xs sm:text-sm active:scale-95 disabled:opacity-50"
+            >
+              <AlertTriangle className="w-4 h-4" />
+              <span>Recoleta</span>
+            </button>
+
+            {/* BOTÃO PRINCIPAL: FINALIZAR AMOSTRA & PRÓXIMO TUBO */}
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={() => handleSalvar("finalizado")}
+              className="flex-2 sm:flex-1 py-3 sm:py-3.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black rounded-xl shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 text-sm sm:text-base active:scale-95 disabled:opacity-50"
+            >
+              <CheckCircle2 className="w-5 h-5" />
+              <span>
+                {isSaving
+                  ? "Gravando..."
+                  : proximoTubo
+                  ? `Salvar & Tubo #${indiceAtual + 2} ➔`
+                  : "Finalizar Amostra"}
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ÁREA DE IMPRESSÃO (EXCLUSIVA PARA WINDOW.PRINT: RELATÓRIO DO DIA EM CAIXAS MENORES) */}
+      <div className="hidden print:block">
+        <RelatorioBancadaDiaPrintView
+          laudos={
+            laudosDia.length > 0
+              ? laudosDia
+              : rotinaDia.map((r) => ({
+                  prontuario: r.prontuario,
+                  nome_paciente: r.nome_paciente,
+                  idade_sexo: r.idade_sexo,
+                  posto_unidade: r.posto_unidade,
+                  solicitante: r.solicitante,
+                  data_hora: dataHoje || "2026-10-26",
+                  status: (r.tem_laudo ? "finalizado" : "rascunho") as StatusLaudo,
+                  observacoes: "",
+                  ...VALORES_PADRAO_NORMAL,
+                }))
+          }
+          dataSelecionada={dataHoje}
+          modo={modoRelatorio}
+        />
       </div>
     </div>
   );

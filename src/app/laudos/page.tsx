@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { LaudoUrina, StatusLaudo, LabConfig, DEFAULT_LAB_CONFIG } from "@/types/urinalise";
 import { StatusBadge } from "@/components/StatusBadge";
-import { LaudoPrintView } from "@/components/LaudoPrintView";
+import { RelatorioBancadaDiaPrintView } from "@/components/RelatorioBancadaDiaPrintView";
 import {
   Printer,
   Search,
@@ -15,6 +15,8 @@ import {
   Calendar,
   X,
   FileText,
+  Boxes,
+  Table,
 } from "lucide-react";
 
 export default function PainelLaudosPage() {
@@ -22,6 +24,7 @@ export default function PainelLaudosPage() {
   const [dataSelecionada, setDataSelecionada] = useState<string>("");
   const [busca, setBusca] = useState<string>("");
   const [statusFiltro, setStatusFiltro] = useState<string>("todos");
+  const [modoRelatorio, setModoRelatorio] = useState<"caixas" | "tabela">("caixas");
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Laudo selecionado para visualização/impressão individual
@@ -162,15 +165,45 @@ export default function PainelLaudosPage() {
                 />
               </div>
 
-              {/* Botão Imprimir Todos */}
+              {/* Seletor de Modo de Impressão (Caixas Menores vs Tabela) */}
+              <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-xl p-1 shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => setModoRelatorio("caixas")}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition flex items-center gap-1 ${
+                    modoRelatorio === "caixas"
+                      ? "bg-slate-900 text-white shadow-2xs"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                  title="Fichas em caixas menores (3 a 4 por folha A4)"
+                >
+                  <Boxes className="w-3.5 h-3.5" />
+                  <span>Caixas Menores</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModoRelatorio("tabela")}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition flex items-center gap-1 ${
+                    modoRelatorio === "tabela"
+                      ? "bg-slate-900 text-white shadow-2xs"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                  title="Tabela resumida ultra-compacta"
+                >
+                  <Table className="w-3.5 h-3.5" />
+                  <span>Tabela Resumo</span>
+                </button>
+              </div>
+
+              {/* Botão Imprimir Relatório do Dia */}
               <button
                 type="button"
                 onClick={handleImprimirTodos}
-                disabled={finalizados === 0}
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5 active:scale-95"
+                disabled={laudosFiltrados.length === 0}
+                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5 active:scale-95"
               >
                 <Printer className="w-4 h-4" />
-                <span>Imprimir Finalizados ({finalizados})</span>
+                <span>Imprimir Relatório do Dia ({laudosFiltrados.length})</span>
               </button>
             </div>
           </div>
@@ -343,26 +376,26 @@ export default function PainelLaudosPage() {
         </div>
       </div>
 
-      {/* MODAL DE PRÉ-VISUALIZAÇÃO DE LAUDO INDIVIDUAL (Apenas em tela) */}
+      {/* MODAL DE PRÉ-VISUALIZAÇÃO DA FICHA DE BANCADA (Apenas em tela) */}
       {laudoAtivo && !imprimindoTodos && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 print:hidden">
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-300">
+          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-300">
             {/* Topbar do Modal */}
             <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-sky-400" />
+                <FileText className="w-5 h-5 text-emerald-400" />
                 <span className="font-bold text-sm">
-                  Laudo A4: {laudoAtivo.nome_paciente} (Pront. {laudoAtivo.prontuario})
+                  Ficha do Paciente: {laudoAtivo.nome_paciente} (Pront. {laudoAtivo.prontuario})
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 transition"
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 transition"
                 >
                   <Printer className="w-4 h-4" />
-                  Imprimir Folha A4
+                  Imprimir Ficha
                 </button>
                 <button
                   type="button"
@@ -374,33 +407,31 @@ export default function PainelLaudosPage() {
               </div>
             </div>
 
-            {/* Conteúdo com rolagem da folha A4 */}
-            <div className="p-6 overflow-y-auto bg-slate-200/50 flex-1">
-              <LaudoPrintView laudo={laudoAtivo} />
+            {/* Conteúdo em Caixa Menor */}
+            <div className="p-6 overflow-y-auto bg-slate-100 flex-1">
+              <RelatorioBancadaDiaPrintView
+                laudos={[laudoAtivo]}
+                dataSelecionada={dataSelecionada}
+                modo="caixas"
+              />
             </div>
           </div>
         </div>
       )}
 
-      {/* ÁREA DE IMPRESSÃO (Renderizada para @media print) */}
+      {/* ÁREA DE IMPRESSÃO (Renderizada para @media print: Relatório do Dia em Caixas Menores) */}
       <div className="hidden print:block">
-        {/* Caso seja impressão individual */}
-        {laudoAtivo && !imprimindoTodos && (
-          <LaudoPrintView laudo={laudoAtivo} showBorder={false} />
-        )}
-
-        {/* Caso seja impressão em lote de todos os finalizados */}
-        {imprimindoTodos && (
-          <div>
-            {laudos
-              .filter((l) => l.status === "finalizado")
-              .map((l, index) => (
-                <div key={l.prontuario + index} className="print-page-break">
-                  <LaudoPrintView laudo={l} showBorder={false} />
-                </div>
-              ))}
-          </div>
-        )}
+        <RelatorioBancadaDiaPrintView
+          laudos={
+            laudoAtivo
+              ? [laudoAtivo]
+              : laudosFiltrados.length > 0
+              ? laudosFiltrados
+              : laudos
+          }
+          dataSelecionada={dataSelecionada}
+          modo={modoRelatorio}
+        />
       </div>
     </div>
   );

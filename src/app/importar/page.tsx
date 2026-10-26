@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { RotinaItem, LabConfig, DEFAULT_LAB_CONFIG } from "@/types/urinalise";
-import { MOCK_ROTINA } from "@/lib/mockData";
 import { MapaBancadaPrintView } from "@/components/MapaBancadaPrintView";
 import { processarMatrizLinhasBancada } from "@/lib/extratorBancada";
 import {
@@ -243,12 +242,6 @@ export default function ImportarRotinaPage() {
     }
   };
 
-  // Carregar dados de exemplo demonstrativos
-  const carregarExemploDemo = () => {
-    setPacientes([...MOCK_ROTINA]);
-    setFeedback({ message: "6 pacientes de exemplo do SUS carregados para a rotina!", type: "info" });
-  };
-
   return (
     <>
       <div className="min-h-screen bg-slate-100/70 pb-24 print:hidden">
@@ -268,14 +261,6 @@ export default function ImportarRotinaPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={carregarExemploDemo}
-              className="px-3 py-2 bg-sky-50 hover:bg-sky-100 text-sky-800 font-semibold text-xs rounded-xl border border-sky-200 transition flex items-center gap-1.5"
-            >
-              <Sparkles className="w-4 h-4 text-sky-600" />
-              Carregar Exemplo SUS
-            </button>
             <button
               type="button"
               onClick={carregarRotinaAtual}

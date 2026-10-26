@@ -30,7 +30,7 @@ import {
 
 const VALORES_PADRAO_NORMAL = {
   volume: "60 mL",
-  cor: "Amarelo citrino",
+  cor: "Amarelo ouro",
   aspecto: "Límpido",
   densidade: "1.020",
   ph: "6.0",
@@ -792,14 +792,19 @@ export default function BancadaOperacionalPage() {
           {/* 1. CENTRAL DE TIRAGEM DO DIA E IMPRESSÃO */}
           <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-6">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-              {/* Esquerda: Título e Status da Sincronização com o Celular */}
-              <div className="space-y-2 max-w-xl">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
-                  <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-                  Modo Produção Ativo • Computador (Tiragem & Impressão)
+              {/* Esquerda: Identidade UroLab e Status da Sincronização */}
+              <div className="space-y-2.5 max-w-xl">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
+                    <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+                    UroLab Conectado • Modo Produção Ativo
+                  </div>
+                  <span className="text-[11px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                    SUS • Conecta SUS Integrado
+                  </span>
                 </div>
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                  Tiragem Automática do Conecta SUS & Relatórios do Dia
+                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                  <span>Central de Tiragem & Relatórios do Dia</span>
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
                   Suba o arquivo bruto de coletas do <b>Conecta SUS</b>. O sistema descarta automaticamente os bioquímicos, unifica os exames de bancada no formato oficial da <b>Tiragem do Dia</b> (com a Urina 1, 2, 3, 4, 5, 6... em ordem alfabética) e envia a mesma fila para o <b>celular</b> realizar as contagens.
@@ -1555,201 +1560,229 @@ export default function BancadaOperacionalPage() {
           {bancadaAtiva === "urina" && (
             <>
               {/* SEÇÃO 1: EXAME FÍSICO-QUÍMICO (FITA REATIVA) */}
-              <section className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-3 mb-2.5">
-                <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-100">
-                  <h2 className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
-                    <span className="w-5 h-5 rounded-md bg-sky-100 text-sky-700 flex items-center justify-center text-[11px] font-bold">
+              <section className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-3.5 mb-2.5">
+                <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center text-xs font-black shadow-xs">
                       1
                     </span>
-                    Fita Reativa (Físico-Químico)
-                  </h2>
+                    <div>
+                      <h2 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wide">
+                        Exame Físico & Químico (Fita)
+                      </h2>
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        Valores normais pré-selecionados
+                      </span>
+                    </div>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setForm({ ...VALORES_PADRAO_NORMAL, observacoes: form.observacoes })}
-                    className="text-[10px] text-slate-500 hover:text-slate-800 flex items-center gap-1 font-bold"
+                    className="text-[10px] text-sky-700 bg-sky-50 hover:bg-sky-100 px-2.5 py-1 rounded-lg border border-sky-200 flex items-center gap-1 font-bold active:scale-95 transition"
                   >
                     <RotateCcw className="w-3 h-3" /> Padrão Normal
                   </button>
                 </div>
 
-                <div className="space-y-3">
-                  <QuickChipSelect
-                    compact
-                    label="Volume da Amostra (VOL)"
-                    sublabel="Ref: Frasco / mL"
-                    value={form.volume || "60 mL"}
-                    onChange={(val) => setForm({ ...form, volume: val })}
-                    options={[
-                      { label: "40 mL", value: "40 mL" },
-                      { label: "50 mL", value: "50 mL" },
-                      { label: "60 mL (Padrão)", value: "60 mL" },
-                      { label: "70 mL", value: "70 mL" },
-                      { label: "80 mL", value: "80 mL" },
-                      { label: "100 mL", value: "100 mL" },
-                      { label: "Frasco", value: "Frasco" },
-                    ]}
-                    allowCustom
-                  />
+                <div className="space-y-3.5">
+                  {/* Bloco 1.1: Físico (Volume, Cor, Aspecto, Densidade, pH) */}
+                  <div className="p-3 bg-amber-50/40 rounded-xl border border-amber-200/60 space-y-3">
+                    <div className="text-[10.5px] font-black text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>🧪</span> Parâmetros Físicos
+                    </div>
 
-                  <QuickChipSelect
-                    compact
-                    label="Cor"
-                    value={form.cor}
-                    onChange={(val) => setForm({ ...form, cor: val })}
-                    options={[
-                      { label: "Am. Claro", value: "Amarelo claro" },
-                      { label: "Am. Citrino", value: "Amarelo citrino" },
-                      { label: "Am. Escuro", value: "Amarelo escuro", isAbnormal: true },
-                      { label: "Âmbar", value: "Âmbar", isAbnormal: true },
-                      { label: "Avermelhado", value: "Avermelhado", isAbnormal: true },
-                    ]}
-                  />
-
-                  <QuickChipSelect
-                    compact
-                    label="Aspecto"
-                    value={form.aspecto}
-                    onChange={(val) => setForm({ ...form, aspecto: val })}
-                    options={[
-                      { label: "Límpido", value: "Límpido" },
-                      { label: "Lig. Turvo", value: "Ligeiramente turvo", isAbnormal: true },
-                      { label: "Turvo", value: "Turvo", isAbnormal: true },
-                    ]}
-                  />
-
-                  <QuickChipSelect
-                    compact
-                    label="Densidade"
-                    value={form.densidade}
-                    onChange={(val) => setForm({ ...form, densidade: val })}
-                    options={[
-                      { label: "1.005", value: "1.005", isAbnormal: true },
-                      { label: "1.010", value: "1.010" },
-                      { label: "1.015", value: "1.015" },
-                      { label: "1.020", value: "1.020" },
-                      { label: "1.025", value: "1.025" },
-                      { label: "1.030", value: "1.030", isAbnormal: true },
-                    ]}
-                  />
-
-                  <QuickChipSelect
-                    compact
-                    label="pH"
-                    value={form.ph}
-                    onChange={(val) => setForm({ ...form, ph: val })}
-                    options={[
-                      { label: "5.0", value: "5.0" },
-                      { label: "5.5", value: "5.5" },
-                      { label: "6.0", value: "6.0" },
-                      { label: "6.5", value: "6.5" },
-                      { label: "7.0", value: "7.0" },
-                      { label: "7.5", value: "7.5", isAbnormal: true },
-                      { label: "8.0", value: "8.0", isAbnormal: true },
-                    ]}
-                  />
-
-                  <QuickChipSelect
-                    compact
-                    label="Proteínas"
-                    value={form.proteina}
-                    onChange={(val) => setForm({ ...form, proteina: val })}
-                    options={[
-                      { label: "Negativo", value: "Negativo" },
-                      { label: "Traços", value: "Traços", isAbnormal: true },
-                      { label: "(+)", value: "(+)", isAbnormal: true },
-                      { label: "(++)", value: "(++)", isAbnormal: true },
-                      { label: "(+++)", value: "(+++)", isAbnormal: true },
-                    ]}
-                  />
-
-                  <QuickChipSelect
-                    compact
-                    label="Glicose"
-                    value={form.glicose}
-                    onChange={(val) => setForm({ ...form, glicose: val })}
-                    options={[
-                      { label: "Negativo", value: "Negativo" },
-                      { label: "(+)", value: "(+)", isAbnormal: true },
-                      { label: "(++)", value: "(++)", isAbnormal: true },
-                      { label: "(+++)", value: "(+++)", isAbnormal: true },
-                      { label: "(++++)", value: "(++++)", isAbnormal: true },
-                    ]}
-                  />
-
-                  <QuickChipSelect
-                    compact
-                    label="Sangue / Hemoglobina"
-                    value={form.sangue}
-                    onChange={(val) => setForm({ ...form, sangue: val })}
-                    options={[
-                      { label: "Negativo", value: "Negativo" },
-                      { label: "Traços", value: "Traços", isAbnormal: true },
-                      { label: "(+)", value: "(+)", isAbnormal: true },
-                      { label: "(++)", value: "(++)", isAbnormal: true },
-                      { label: "(+++)", value: "(+++)", isAbnormal: true },
-                    ]}
-                  />
-
-                  <div className="grid grid-cols-2 gap-2">
                     <QuickChipSelect
                       compact
-                      label="Nitrito"
-                      value={form.nitrito}
-                      onChange={(val) => setForm({ ...form, nitrito: val })}
+                      label="Volume da Amostra (VOL)"
+                      sublabel="Frasco / mL"
+                      value={form.volume || "60 mL"}
+                      onChange={(val) => setForm({ ...form, volume: val })}
                       options={[
-                        { label: "Negativo", value: "Negativo" },
-                        { label: "Positivo", value: "Positivo", isAbnormal: true },
+                        { label: "40 mL", value: "40 mL" },
+                        { label: "50 mL", value: "50 mL" },
+                        { label: "60 mL (Padrão)", value: "60 mL" },
+                        { label: "70 mL", value: "70 mL" },
+                        { label: "80 mL", value: "80 mL" },
+                        { label: "100 mL", value: "100 mL" },
+                        { label: "Frasco", value: "Frasco" },
+                      ]}
+                      allowCustom
+                    />
+
+                    <QuickChipSelect
+                      compact
+                      label="Cor da Urina"
+                      sublabel="Visual"
+                      value={form.cor}
+                      onChange={(val) => setForm({ ...form, cor: val })}
+                      options={[
+                        { label: "Amarelo Ouro", value: "Amarelo ouro" },
+                        { label: "Amarelo Citrino", value: "Amarelo citrino" },
+                        { label: "Amarelo Claro", value: "Amarelo claro" },
+                        { label: "Amarelo Escuro", value: "Amarelo escuro", isAbnormal: true },
+                        { label: "Âmbar", value: "Âmbar", isAbnormal: true },
+                        { label: "Avermelhado", value: "Avermelhado", isAbnormal: true },
                       ]}
                     />
 
                     <QuickChipSelect
                       compact
-                      label="Corpos Cetônicos"
-                      value={form.cetona}
-                      onChange={(val) => setForm({ ...form, cetona: val })}
+                      label="Aspecto"
+                      sublabel="Transparência"
+                      value={form.aspecto}
+                      onChange={(val) => setForm({ ...form, aspecto: val })}
                       options={[
-                        { label: "Negativo", value: "Negativo" },
-                        { label: "Positivo", value: "Positivo", isAbnormal: true },
+                        { label: "Límpido (Normal)", value: "Límpido" },
+                        { label: "Ligeiramente Turvo", value: "Ligeiramente turvo", isAbnormal: true },
+                        { label: "Turvo", value: "Turvo", isAbnormal: true },
                       ]}
                     />
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <QuickChipSelect
+                        compact
+                        label="Densidade"
+                        sublabel="Ref: 1.015 - 1.025"
+                        value={form.densidade}
+                        onChange={(val) => setForm({ ...form, densidade: val })}
+                        options={[
+                          { label: "1.005", value: "1.005", isAbnormal: true },
+                          { label: "1.010", value: "1.010" },
+                          { label: "1.015", value: "1.015" },
+                          { label: "1.020", value: "1.020" },
+                          { label: "1.025", value: "1.025" },
+                          { label: "1.030", value: "1.030", isAbnormal: true },
+                        ]}
+                      />
+
+                      <QuickChipSelect
+                        compact
+                        label="pH Urinário"
+                        sublabel="Ref: 5.0 - 7.0"
+                        value={form.ph}
+                        onChange={(val) => setForm({ ...form, ph: val })}
+                        options={[
+                          { label: "5.0", value: "5.0" },
+                          { label: "5.5", value: "5.5" },
+                          { label: "6.0", value: "6.0" },
+                          { label: "6.5", value: "6.5" },
+                          { label: "7.0", value: "7.0" },
+                          { label: "7.5", value: "7.5", isAbnormal: true },
+                          { label: "8.0", value: "8.0", isAbnormal: true },
+                        ]}
+                      />
+                    </div>
                   </div>
 
-                  <QuickChipSelect
-                    compact
-                    label="Leucócitos (Esterase da Fita)"
-                    value={form.leucocitos_fita}
-                    onChange={(val) => setForm({ ...form, leucocitos_fita: val })}
-                    options={[
-                      { label: "Negativo", value: "Negativo" },
-                      { label: "Traços", value: "Traços", isAbnormal: true },
-                      { label: "(+)", value: "(+)", isAbnormal: true },
-                      { label: "(++)", value: "(++)", isAbnormal: true },
-                      { label: "(+++)", value: "(+++)", isAbnormal: true },
-                    ]}
-                  />
+                  {/* Bloco 1.2: Químico (Reagentes da Fita) */}
+                  <div className="p-3 bg-sky-50/40 rounded-xl border border-sky-200/60 space-y-3">
+                    <div className="text-[10.5px] font-black text-sky-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>📑</span> Bioquímica da Fita
+                    </div>
 
-                  <div className="grid grid-cols-2 gap-2">
                     <QuickChipSelect
                       compact
-                      label="Bilirrubina"
-                      value={form.bilirrubina}
-                      onChange={(val) => setForm({ ...form, bilirrubina: val })}
+                      label="Proteínas (Proteinúria)"
+                      value={form.proteina}
+                      onChange={(val) => setForm({ ...form, proteina: val })}
                       options={[
                         { label: "Negativo", value: "Negativo" },
-                        { label: "Positivo", value: "Positivo", isAbnormal: true },
+                        { label: "Traços", value: "Traços", isAbnormal: true },
+                        { label: "(+)", value: "(+)", isAbnormal: true },
+                        { label: "(++)", value: "(++)", isAbnormal: true },
+                        { label: "(+++)", value: "(+++)", isAbnormal: true },
                       ]}
                     />
 
                     <QuickChipSelect
                       compact
-                      label="Urobilinogênio"
-                      value={form.urobilinogenio}
-                      onChange={(val) => setForm({ ...form, urobilinogenio: val })}
+                      label="Glicose (Glicosúria)"
+                      value={form.glicose}
+                      onChange={(val) => setForm({ ...form, glicose: val })}
                       options={[
-                        { label: "Normal", value: "Normal" },
-                        { label: "Aumentado", value: "Aumentado", isAbnormal: true },
+                        { label: "Negativo", value: "Negativo" },
+                        { label: "(+)", value: "(+)", isAbnormal: true },
+                        { label: "(++)", value: "(++)", isAbnormal: true },
+                        { label: "(+++)", value: "(+++)", isAbnormal: true },
+                        { label: "(++++)", value: "(++++)", isAbnormal: true },
                       ]}
                     />
+
+                    <QuickChipSelect
+                      compact
+                      label="Sangue / Hemoglobina"
+                      value={form.sangue}
+                      onChange={(val) => setForm({ ...form, sangue: val })}
+                      options={[
+                        { label: "Negativo", value: "Negativo" },
+                        { label: "Traços", value: "Traços", isAbnormal: true },
+                        { label: "(+)", value: "(+)", isAbnormal: true },
+                        { label: "(++)", value: "(++)", isAbnormal: true },
+                        { label: "(+++)", value: "(+++)", isAbnormal: true },
+                      ]}
+                    />
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <QuickChipSelect
+                        compact
+                        label="Nitrito"
+                        value={form.nitrito}
+                        onChange={(val) => setForm({ ...form, nitrito: val })}
+                        options={[
+                          { label: "Negativo", value: "Negativo" },
+                          { label: "Positivo", value: "Positivo", isAbnormal: true },
+                        ]}
+                      />
+
+                      <QuickChipSelect
+                        compact
+                        label="Corpos Cetônicos"
+                        value={form.cetona}
+                        onChange={(val) => setForm({ ...form, cetona: val })}
+                        options={[
+                          { label: "Negativo", value: "Negativo" },
+                          { label: "Positivo", value: "Positivo", isAbnormal: true },
+                        ]}
+                      />
+                    </div>
+
+                    <QuickChipSelect
+                      compact
+                      label="Leucócitos (Esterase da Fita)"
+                      value={form.leucocitos_fita}
+                      onChange={(val) => setForm({ ...form, leucocitos_fita: val })}
+                      options={[
+                        { label: "Negativo", value: "Negativo" },
+                        { label: "Traços", value: "Traços", isAbnormal: true },
+                        { label: "(+)", value: "(+)", isAbnormal: true },
+                        { label: "(++)", value: "(++)", isAbnormal: true },
+                        { label: "(+++)", value: "(+++)", isAbnormal: true },
+                      ]}
+                    />
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <QuickChipSelect
+                        compact
+                        label="Bilirrubina"
+                        value={form.bilirrubina}
+                        onChange={(val) => setForm({ ...form, bilirrubina: val })}
+                        options={[
+                          { label: "Negativo", value: "Negativo" },
+                          { label: "Positivo", value: "Positivo", isAbnormal: true },
+                        ]}
+                      />
+
+                      <QuickChipSelect
+                        compact
+                        label="Urobilinogênio"
+                        value={form.urobilinogenio}
+                        onChange={(val) => setForm({ ...form, urobilinogenio: val })}
+                        options={[
+                          { label: "Normal", value: "Normal" },
+                          { label: "Aumentado", value: "Aumentado", isAbnormal: true },
+                        ]}
+                      />
+                    </div>
                   </div>
                 </div>
               </section>

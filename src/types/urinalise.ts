@@ -136,7 +136,7 @@ export const DEFAULT_LAB_CONFIG: LabConfig = {
 export const VALORES_PADRAO_NORMAL: Omit<LaudoUrina, "data_hora" | "prontuario" | "nome_paciente" | "status" | "observacoes"> = {
   tem_urina: true,
   volume: "60 mL",
-  cor: "AC (Amarelo citrino)",
+  cor: "Amarelo ouro",
   aspecto: "L (Límpido)",
   densidade: "1.020",
   ph: "6.0",

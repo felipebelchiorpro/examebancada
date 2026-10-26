@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Logo } from "@/components/Logo";
 import {
   FlaskConical,
   FileSpreadsheet,
@@ -54,7 +55,7 @@ export const Navbar: React.FC = () => {
   }, []);
 
   const navLinks = [
-    { href: "/", label: "Painel & Tiragem do Dia", icon: Printer },
+    { href: "/", label: "Tiragem do Dia", icon: Printer },
     { href: "/importar", label: "Importar Conecta SUS", icon: FileSpreadsheet },
     { href: "/laudos", label: "Relatórios & Canhotos", icon: FlaskConical },
     { href: "/consulta", label: "Histórico", icon: History },
@@ -81,33 +82,14 @@ export const Navbar: React.FC = () => {
   return (
     <>
       {/* Top Navbar */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs print:hidden">
-        <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-14 sm:h-16">
-            {/* Logo e Identificação */}
-            <div className="flex items-center gap-2">
-              <Link href="/" className="flex items-center gap-2 group">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-sky-600 to-teal-600 flex items-center justify-center text-white shadow-sm shadow-sky-500/20">
-                  <FlaskConical className="w-4 h-4 sm:w-5 sm:h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-black text-slate-800 tracking-tight text-sm sm:text-lg">
-                      BANCADA
-                    </span>
-                    <span className="bg-sky-100 text-sky-800 text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded tracking-wider border border-sky-200">
-                      SUS
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-slate-500 font-medium hidden sm:block">
-                    Tiragem Automática & Contagem Mobile
-                  </p>
-                </div>
-              </Link>
-            </div>
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/90 shadow-2xs print:hidden">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-15 sm:h-16">
+            {/* Logo Profissional */}
+            <Logo />
 
             {/* Links de navegação exclusivos para Computador (Desktop) */}
-            <nav className="hidden md:flex items-center gap-1">
+            <nav className="hidden md:flex items-center gap-1 bg-slate-100/70 p-1 rounded-2xl border border-slate-200/60">
               {navLinks.map((link) => {
                 const Icon = link.icon;
                 const isActive = pathname === link.href;
@@ -115,13 +97,13 @@ export const Navbar: React.FC = () => {
                   <Link
                     key={link.href}
                     href={link.href}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs lg:text-sm font-semibold transition-all ${
+                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs lg:text-[13px] font-bold transition-all ${
                       isActive
-                        ? "bg-slate-900 text-white shadow-sm"
-                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                        ? "bg-white text-slate-900 shadow-xs font-black"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
                     }`}
                   >
-                    <Icon className="w-4 h-4" />
+                    <Icon className={`w-3.5 h-3.5 ${isActive ? "text-sky-600" : "text-slate-400"}`} />
                     {link.label}
                   </Link>
                 );
@@ -143,7 +125,7 @@ export const Navbar: React.FC = () => {
 
               <Link
                 href="/configuracoes"
-                className={`flex items-center gap-1 text-[10px] sm:text-xs font-bold px-2.5 py-1 rounded-full border transition-all ${
+                className={`flex items-center gap-1.5 text-[10.5px] sm:text-xs font-bold px-2.5 py-1 rounded-full border transition-all ${
                   sheetsStatus === "connected"
                     ? "bg-teal-50 text-teal-800 border-teal-200 hover:bg-teal-100"
                     : "bg-sky-50 text-sky-800 border-sky-200 hover:bg-sky-100"
@@ -185,7 +167,7 @@ export const Navbar: React.FC = () => {
                 }}
                 className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-xl text-center transition-all active:scale-95 ${
                   isSelected
-                    ? "text-sky-700 bg-sky-50 font-bold shadow-2xs border border-sky-200/70"
+                    ? "text-sky-700 bg-sky-50 font-black shadow-2xs border border-sky-200"
                     : "text-slate-500 hover:text-slate-800"
                 }`}
               >

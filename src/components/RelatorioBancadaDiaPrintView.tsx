@@ -7,14 +7,14 @@ interface RelatorioBancadaDiaPrintViewProps {
   laudos: LaudoUrina[];
   dataSelecionada: string;
   labConfig?: LabConfig;
-  modo?: "caixas" | "tabela";
+  modo?: "tiras" | "caixas" | "tabela";
 }
 
 export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintViewProps> = ({
   laudos,
   dataSelecionada,
   labConfig = DEFAULT_LAB_CONFIG,
-  modo = "caixas",
+  modo = "tiras",
 }) => {
   const [dataFormatada, setDataFormatada] = React.useState<string>(() => {
     if (dataSelecionada) {
@@ -39,34 +39,37 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
 
   return (
     <div
-      className="bg-white text-black text-xs font-sans print:p-0 print:m-0 print:w-full"
+      className="bg-white text-black font-sans print:p-0 print:m-0 print:w-full"
       style={{ fontFamily: "'Helvetica Neue', Arial, sans-serif" }}
     >
       {/* CABEÇALHO DO RELATÓRIO DO DIA */}
-      <div className="border-b-2 border-black pb-2 mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 border-2 border-black flex flex-col items-center justify-center font-black leading-none text-center">
-            <span className="text-[12px]">SUS</span>
-            <span className="text-[7px]">LAB</span>
+      <div className="border-b-2 border-black pb-1.5 mb-2.5 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 border-2 border-black flex flex-col items-center justify-center font-black leading-none text-center">
+            <span className="text-[10px]">SUS</span>
+            <span className="text-[6px]">LAB</span>
           </div>
           <div>
-            <h1 className="text-sm font-black uppercase tracking-tight">
+            <h1 className="text-xs font-black uppercase tracking-tight">
               {labConfig.nomeInstituicao} - {labConfig.nomeLaboratorio}
             </h1>
-            <p className="text-[11px] font-bold text-slate-800 uppercase">
-              RELATÓRIO DO DIA - EXAMES DE BANCADA (ANEXO DE ARQUIVOS / DIGITAÇÃO)
+            <p className="text-[9.5px] font-bold text-slate-800 uppercase">
+              {modo === "tiras"
+                ? "CANHOTOS DE BANCADA (TIRAS RECORTÁVEIS PARA ANEXAR À REQUISIÇÃO)"
+                : "RELATÓRIO DO DIA - EXAMES DE BANCADA"}
             </p>
           </div>
         </div>
-        <div className="text-right text-[10px]">
-          <p className="font-bold">Data da Bancada: {dataFormatada}</p>
-          <p className="text-slate-600">Impresso às {agoraHora} • Total: {laudos.length} paciente(s)</p>
+
+        <div className="text-right text-[9px]">
+          <p className="font-bold">Data: {dataFormatada}</p>
+          <p className="text-slate-600">Total: {laudos.length} paciente(s)</p>
         </div>
       </div>
 
-      {/* MODO CAIXAS MENORES (3 A 4 PACIENTES POR PÁGINA A4) */}
-      {modo === "caixas" ? (
-        <div className="flex flex-col gap-3">
+      {/* MODO 1: TIRAS / CANHOTOS DE BANCADA (IDÊNTICO AO MODELO FÍSICO DO LABORATÓRIO - CABEM 9 A 12 POR FOLHA) */}
+      {modo === "tiras" && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 print:grid-cols-3 gap-2 print:gap-1.5">
           {laudos.map((l, idx) => {
             const temOutros =
               l.tem_pso ||
@@ -82,131 +85,154 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
               l.tem_coagulograma ||
               l.tp_tempo ||
               l.tem_proteinuria_rapida ||
-              l.resultado_proteinuria_rapida;
+              l.resultado_proteinuria_rapida ||
+              l.tem_abo_rh ||
+              l.resultado_abo_rh;
 
             return (
               <div
                 key={l.prontuario + idx}
-                className="border border-black rounded p-2.5 bg-white break-inside-avoid shadow-none"
-                style={{ pageBreakInside: "avoid" }}
+                className="border-2 border-black p-2 bg-white break-inside-avoid flex flex-col justify-between"
+                style={{ pageBreakInside: "avoid", minHeight: "190px" }}
               >
-                {/* TOPO DO BLOCO DO PACIENTE */}
-                <div className="flex items-center justify-between border-b border-black pb-1 mb-1.5 bg-slate-100 -m-2.5 p-2 rounded-t font-bold text-[11px]">
-                  <div className="flex items-center gap-2">
-                    <span className="bg-black text-white px-1.5 py-0.5 rounded text-[10px] font-black">
-                      TUBO #{idx + 1}
-                    </span>
-                    <span className="font-mono text-black">Pront: {l.prontuario}</span>
-                    <span className="uppercase text-slate-900 font-black">— {l.nome_paciente}</span>
+                {/* TOPO DO CANHOTO */}
+                <div className="border-b border-black pb-1 mb-1.5">
+                  <div className="flex items-center justify-between text-[9px] font-black font-mono">
+                    <span className="bg-black text-white px-1 py-0.2 rounded">#{idx + 1}</span>
+                    <span className="font-bold">PRONT: {l.prontuario}</span>
                   </div>
-                  <div className="text-[10px] text-slate-700 font-semibold">
-                    {l.idade_sexo || ""} {l.posto_unidade ? `• ${l.posto_unidade}` : ""}
+                  <div className="text-[10px] font-black uppercase tracking-tight truncate mt-0.5" title={l.nome_paciente}>
+                    {l.nome_paciente}
                   </div>
                 </div>
 
-                {/* CAIXA MENOR 1: URINÁLISE (EAS) */}
-                <div className="mt-2">
-                  <div className="text-[9.5px] font-black uppercase text-slate-800 mb-0.5 flex items-center gap-1">
-                    <span>🧪 URINÁLISE (EAS / SUMÁRIO DE URINA):</span>
+                {/* CAMPOS PADRÃO DA BANCADA: VOL, COR, ASP, PH, DENS, H, L, C, B, CRISTAIS */}
+                <div className="space-y-0.5 text-[9.5px] font-mono leading-none">
+                  <div className="flex justify-between border-b border-dotted border-slate-300 pb-0.5">
+                    <span className="font-black text-black">VOL:</span>
+                    <span className="font-sans font-medium text-slate-900">Frasco</span>
                   </div>
-                  <div className="bg-slate-50 border border-slate-300 rounded p-1.5 text-[9.5px] leading-tight space-y-1">
-                    {/* Linha 1: Físico-Químico */}
-                    <div className="grid grid-cols-6 gap-1 font-mono">
-                      <div><b className="text-slate-600">Cor:</b> {l.cor || "Am. citrino"}</div>
-                      <div><b className="text-slate-600">Asp:</b> {l.aspecto || "Límpido"}</div>
-                      <div><b className="text-slate-600">Dens:</b> {l.densidade || "1.020"}</div>
-                      <div><b className="text-slate-600">pH:</b> {l.ph || "6.0"}</div>
-                      <div><b className="text-slate-600">Prot:</b> {l.proteina || "Negativo"}</div>
-                      <div><b className="text-slate-600">Glic:</b> {l.glicose || "Negativo"}</div>
-                    </div>
-                    {/* Linha 2: Fita Reativa Complementar */}
-                    <div className="grid grid-cols-6 gap-1 font-mono">
-                      <div><b className="text-slate-600">Cet:</b> {l.cetona || "Negativo"}</div>
-                      <div><b className="text-slate-600">Bil:</b> {l.bilirrubina || "Negativo"}</div>
-                      <div><b className="text-slate-600">Urob:</b> {l.urobilinogenio || "Normal"}</div>
-                      <div><b className="text-slate-600">Sg/Hb:</b> {l.sangue || "Negativo"}</div>
-                      <div><b className="text-slate-600">Nit:</b> {l.nitrito || "Negativo"}</div>
-                      <div><b className="text-slate-600">Leu(fita):</b> {l.leucocitos_fita || "Negativo"}</div>
-                    </div>
-                    {/* Linha 3: Sedimentoscopia Microscópica */}
-                    <div className="border-t border-slate-200 pt-1 grid grid-cols-6 gap-1 font-mono text-[9px] bg-white p-1 rounded">
-                      <div><b className="text-slate-600">Cél:</b> {l.celulas_epiteliais || "Raras"}</div>
-                      <div><b className="text-slate-600">Leu:</b> {l.leucocitos_campo || "1-3 p/c"}</div>
-                      <div><b className="text-slate-600">Hem:</b> {l.hemacias_campo || "0-1 p/c"}</div>
-                      <div><b className="text-slate-600">Bact:</b> {l.bacterias || "Ausentes"}</div>
-                      <div><b className="text-slate-600">Cristais:</b> {l.cristais || "Ausentes"}</div>
-                      <div><b className="text-slate-600">Cilindros:</b> {l.cilindros || "Ausentes"}</div>
-                    </div>
+                  <div className="flex justify-between border-b border-dotted border-slate-300 pb-0.5">
+                    <span className="font-black text-black">COR:</span>
+                    <span className="font-sans font-semibold text-slate-900">{l.cor || "Am. citrino"}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-dotted border-slate-300 pb-0.5">
+                    <span className="font-black text-black">ASP:</span>
+                    <span className="font-sans font-semibold text-slate-900">{l.aspecto || "Límpido"}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-dotted border-slate-300 pb-0.5">
+                    <span className="font-black text-black">PH:</span>
+                    <span className="font-sans font-bold text-slate-900">{l.ph || "6.0"}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-dotted border-slate-300 pb-0.5">
+                    <span className="font-black text-black">DENS:</span>
+                    <span className="font-sans font-bold text-slate-900">{l.densidade || "1.020"}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-dotted border-slate-300 pb-0.5">
+                    <span className="font-black text-black">H:</span>
+                    <span className="font-sans font-bold text-slate-900">{l.hemacias_campo || "0-2 p/c"}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-dotted border-slate-300 pb-0.5">
+                    <span className="font-black text-black">L:</span>
+                    <span className="font-sans font-bold text-slate-900">{l.leucocitos_campo || "0-4 p/c"}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-dotted border-slate-300 pb-0.5">
+                    <span className="font-black text-black">C:</span>
+                    <span className="font-sans font-semibold text-slate-900">{l.celulas_epiteliais || "Raras"}</span>
+                  </div>
+                  <div className="flex justify-between border-b border-dotted border-slate-300 pb-0.5">
+                    <span className="font-black text-black">B:</span>
+                    <span className="font-sans font-semibold text-slate-900">{l.bacterias || "Ausentes"}</span>
+                  </div>
+                  <div className="flex justify-between pb-0.5">
+                    <span className="font-black text-black">CRISTAIS:</span>
+                    <span className="font-sans font-semibold text-slate-900">{l.cristais || "Ausentes"}</span>
                   </div>
                 </div>
 
-                {/* CAIXA MENOR 2: DEMAIS EXAMES DE BANCADA (SE HOUVER) */}
+                {/* OUTROS EXAMES (SE HOUVER) */}
                 {temOutros && (
-                  <div className="mt-1.5 pt-1 border-t border-dashed border-slate-300">
-                    <div className="text-[9.5px] font-black uppercase text-slate-800 mb-0.5">
-                      🔬 OUTROS EXAMES DA BANCADA:
-                    </div>
-                    <div className="bg-slate-50 border border-slate-300 rounded p-1.5 text-[9.5px] flex flex-wrap gap-x-3 gap-y-1 font-mono">
-                      {(l.tem_pso || l.resultado_pso) && (
-                        <div><b className="text-slate-700">Sangue Oculto (PSO):</b> <span className="font-bold">{l.resultado_pso || "Negativo"}</span></div>
-                      )}
-                      {(l.tem_proteinuria_rapida || l.resultado_proteinuria_rapida) && (
-                        <div><b className="text-slate-700">Proteinúria Rápida:</b> <span className="font-bold">{l.resultado_proteinuria_rapida || "Negativo"}</span></div>
-                      )}
-                      {(l.tem_vdrl || l.resultado_vdrl) && (
-                        <div><b className="text-slate-700">VDRL:</b> <span className="font-bold">{l.resultado_vdrl || "Não Reagente"}</span></div>
-                      )}
-                      {(l.tem_beta_hcg || l.resultado_beta_hcg) && (
-                        <div><b className="text-slate-700">Beta-HCG:</b> <span className="font-bold">{l.resultado_beta_hcg || "Negativo"}</span></div>
-                      )}
-                      {(l.tem_vhs || l.resultado_vhs) && (
-                        <div><b className="text-slate-700">VHS:</b> <span className="font-bold">{l.resultado_vhs || "10 mm/1ªh"}</span></div>
-                      )}
-                      {(l.tem_pcr || l.resultado_pcr) && (
-                        <div><b className="text-slate-700">PCR:</b> <span className="font-bold">{l.resultado_pcr || "Negativo"}</span></div>
-                      )}
-                      {l.resultado_aslo && (
-                        <div><b className="text-slate-700">ASLO:</b> <span className="font-bold">{l.resultado_aslo}</span></div>
-                      )}
-                      {l.resultado_fr && (
-                        <div><b className="text-slate-700">FR:</b> <span className="font-bold">{l.resultado_fr}</span></div>
-                      )}
-                      {(l.tem_coagulograma || l.tp_tempo) && (
-                        <div>
-                          <b className="text-slate-700">Coagulograma:</b>{" "}
-                          <span className="font-bold">TP: {l.tp_tempo || "12.0s"} (INR {l.tp_inr || "1.00"}) | TTPA: {l.ttpa_tempo || "31.0s"} (Rel {l.ttpa_relacao || "1.00"})</span>
-                          {l.coagulograma_repetido && (
-                            <span className="ml-1 text-[8.5px] bg-amber-100 text-amber-900 px-1 rounded font-bold border border-amber-300">
-                              [Repetido & Confirmado]
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* OBSERVAÇÕES (SE HOUVER) */}
-                {l.observacoes && (
-                  <div className="mt-1 text-[9px] text-slate-700 italic">
-                    <b>Obs:</b> {l.observacoes}
+                  <div className="mt-1 pt-1 border-t-2 border-black text-[8.5px] font-mono leading-tight space-y-0.5 bg-slate-50 p-1 rounded">
+                    {(l.tem_abo_rh || l.resultado_abo_rh) && (
+                      <div className="font-bold text-black flex justify-between border-b border-slate-300 pb-0.5">
+                        <span>ABO/Rh:</span>
+                        <span className="font-sans font-black text-slate-900">{l.resultado_abo_rh || "O Positivo (+)"}</span>
+                      </div>
+                    )}
+                    {(l.tem_vdrl || l.resultado_vdrl) && (
+                      <div className="font-bold">VDRL: {l.resultado_vdrl || "Não Reagente"}</div>
+                    )}
+                    {(l.tem_pso || l.resultado_pso) && (
+                      <div className="font-bold">PSO: {l.resultado_pso || "Negativo"}</div>
+                    )}
+                    {(l.tem_beta_hcg || l.resultado_beta_hcg) && (
+                      <div className="font-bold">BETA: {l.resultado_beta_hcg || "Negativo"}</div>
+                    )}
+                    {(l.tp_tempo || l.tem_coagulograma) && (
+                      <div className="font-bold">TP: {l.tp_tempo || "12s"} | TTPA: {l.ttpa_tempo || "31s"}</div>
+                    )}
+                    {(l.tem_vhs || l.resultado_vhs) && (
+                      <div className="font-bold">VHS: {l.resultado_vhs || "10mm"}</div>
+                    )}
+                    {(l.tem_pcr || l.resultado_pcr) && (
+                      <div className="font-bold">PCR: {l.resultado_pcr || "Negativo"}</div>
+                    )}
                   </div>
                 )}
               </div>
             );
           })}
         </div>
-      ) : (
-        /* MODO TABELA GERAL ULTRA-COMPACTA */
-        <table className="w-full border-collapse border border-black text-[9.5px]">
+      )}
+
+      {/* MODO 2: CAIXAS MÉDIAS */}
+      {modo === "caixas" && (
+        <div className="flex flex-col gap-2.5">
+          {laudos.map((l, idx) => (
+            <div
+              key={l.prontuario + idx}
+              className="border border-black rounded p-2 bg-white break-inside-avoid"
+              style={{ pageBreakInside: "avoid" }}
+            >
+              <div className="flex items-center justify-between border-b border-black pb-1 mb-1 font-bold text-[10px]">
+                <div className="flex items-center gap-2">
+                  <span className="bg-black text-white px-1.5 py-0.2 rounded text-[9px]">#{idx + 1}</span>
+                  <span>Pront: {l.prontuario}</span>
+                  <span className="uppercase font-black">— {l.nome_paciente}</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-6 gap-1 text-[9px] font-mono">
+                <div><b>Cor:</b> {l.cor || "Am. citrino"}</div>
+                <div><b>Asp:</b> {l.aspecto || "Límpido"}</div>
+                <div><b>Dens:</b> {l.densidade || "1.020"}</div>
+                <div><b>pH:</b> {l.ph || "6.0"}</div>
+                <div><b>Prot:</b> {l.proteina || "Negativo"}</div>
+                <div><b>Glic:</b> {l.glicose || "Negativo"}</div>
+              </div>
+              <div className="border-t border-slate-200 mt-1 pt-1 grid grid-cols-6 gap-1 text-[9px] font-mono">
+                <div><b>Cél:</b> {l.celulas_epiteliais || "Raras"}</div>
+                <div><b>Leu:</b> {l.leucocitos_campo || "0-4 p/c"}</div>
+                <div><b>Hem:</b> {l.hemacias_campo || "0-2 p/c"}</div>
+                <div><b>Bact:</b> {l.bacterias || "Ausentes"}</div>
+                <div><b>Cristais:</b> {l.cristais || "Ausentes"}</div>
+                <div><b>Cilindros:</b> {l.cilindros || "Ausentes"}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* MODO 3: TABELA COMPACTA */}
+      {modo === "tabela" && (
+        <table className="w-full border-collapse border border-black text-[9px]">
           <thead>
-            <tr className="bg-slate-200 border-b border-black font-bold uppercase text-[8.5px]">
-              <th className="border border-black p-1 text-center w-8">Tubo</th>
+            <tr className="bg-slate-200 border-b border-black font-bold uppercase text-[8px]">
+              <th className="border border-black p-1 text-center w-8">#</th>
               <th className="border border-black p-1 text-center w-16">Pront.</th>
               <th className="border border-black p-1 text-left w-36">Paciente</th>
-              <th className="border border-black p-1 text-left">Físico-Químico (Fita)</th>
-              <th className="border border-black p-1 text-left">Sedimentoscopia (Campo)</th>
-              <th className="border border-black p-1 text-left w-48">Outros Exames</th>
+              <th className="border border-black p-1 text-left">Físico-Químico</th>
+              <th className="border border-black p-1 text-left">Sedimentoscopia</th>
+              <th className="border border-black p-1 text-left">Outros</th>
             </tr>
           </thead>
           <tbody>
@@ -215,22 +241,14 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                 <td className="border border-black p-1 text-center font-bold">#{idx + 1}</td>
                 <td className="border border-black p-1 text-center font-mono font-bold">{l.prontuario}</td>
                 <td className="border border-black p-1 font-bold truncate max-w-[140px]">{l.nome_paciente}</td>
-                <td className="border border-black p-1 text-[8.5px] font-mono leading-tight">
-                  D: {l.densidade || "1.020"} | pH: {l.ph || "6.0"} | Prot: {l.proteina || "Neg"} | Glic: {l.glicose || "Neg"} | Leu: {l.leucocitos_fita || "Neg"} | Sg: {l.sangue || "Neg"} | Nit: {l.nitrito || "Neg"}
+                <td className="border border-black p-1 text-[8.5px] font-mono">
+                  D: {l.densidade || "1.020"} | pH: {l.ph || "6.0"} | Cor: {l.cor || "Am. citrino"}
                 </td>
-                <td className="border border-black p-1 text-[8.5px] font-mono leading-tight">
-                  Cél: {l.celulas_epiteliais || "Raras"} | Leu: {l.leucocitos_campo || "1-3"} | Hem: {l.hemacias_campo || "0-1"} | Bact: {l.bacterias || "Aus"}
+                <td className="border border-black p-1 text-[8.5px] font-mono">
+                  H: {l.hemacias_campo || "0-2"} | L: {l.leucocitos_campo || "0-4"} | C: {l.celulas_epiteliais || "Raras"} | B: {l.bacterias || "Aus"}
                 </td>
-                <td className="border border-black p-1 text-[8.5px] font-mono leading-tight">
-                  {[
-                    l.resultado_pso ? `PSO: ${l.resultado_pso}` : null,
-                    l.resultado_vdrl ? `VDRL: ${l.resultado_vdrl}` : null,
-                    l.resultado_beta_hcg ? `Beta: ${l.resultado_beta_hcg}` : null,
-                    l.tp_tempo ? `TP: ${l.tp_tempo} (${l.tp_inr})` : null,
-                    l.ttpa_tempo ? `TTPA: ${l.ttpa_tempo}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" • ") || "-"}
+                <td className="border border-black p-1 text-[8.5px] font-mono">
+                  {[l.resultado_vdrl ? `VDRL: ${l.resultado_vdrl}` : null, l.resultado_pso ? `PSO: ${l.resultado_pso}` : null].filter(Boolean).join(" • ") || "-"}
                 </td>
               </tr>
             ))}

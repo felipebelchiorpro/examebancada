@@ -42,6 +42,7 @@ export const CABECALHO_LAUDOS = [
   "resultado_pcr",
   "coagulograma_tp",
   "coagulograma_ttpa",
+  "resultado_abo_rh",
 ];
 
 export const CABECALHO_ROTINA = [
@@ -470,6 +471,8 @@ export async function listarLaudos(dataFiltro?: string): Promise<LaudoUrina[]> {
         tp_tempo: r[offset + 29] || undefined,
         tem_coagulograma: Boolean(r[offset + 29] || r[offset + 30]),
         ttpa_tempo: r[offset + 30] || undefined,
+        resultado_abo_rh: r[offset + 31] || undefined,
+        tem_abo_rh: Boolean(r[offset + 31]),
       });
     }
 

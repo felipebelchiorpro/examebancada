@@ -72,7 +72,10 @@ export interface LaudoUrina {
 
   // 6. Teste Rápido de Proteinúria (Rastreio de Pré-Eclâmpsia / Gestante)
   tem_proteinuria_rapida?: boolean;
-  resultado_proteinuria_rapida?: string; // "Negativo" | "Traços" | "(+) 30 mg/dL" | "(++) 100 mg/dL" | "(+++) 300 mg/dL" | "(++++) > 1000 mg/dL"
+  resultado_proteinuria_rapida?: string;
+  // 7. Grupo Sanguíneo e Fator Rh
+  tem_abo_rh?: boolean;
+  resultado_abo_rh?: string; // "Negativo" | "Traços" | "(+) 30 mg/dL" | "(++) 100 mg/dL" | "(+++) 300 mg/dL" | "(++++) > 1000 mg/dL"
 
   observacoes: string;
   status: StatusLaudo;
@@ -101,6 +104,7 @@ export interface RotinaItem {
   tem_aslo?: boolean;
   tem_fr?: boolean;
   tem_coagulograma?: boolean;
+  tem_abo_rh?: boolean;
   exames_bancada?: string[];
 }
 
@@ -159,6 +163,8 @@ export const VALORES_PADRAO_NORMAL: Omit<LaudoUrina, "data_hora" | "prontuario" 
   resultado_aslo: "Negativo (< 200 UI/mL)",
   tem_fr: false,
   resultado_fr: "Negativo (< 8 UI/mL)",
+  tem_abo_rh: false,
+  resultado_abo_rh: "O Positivo (+)",
   tem_coagulograma: false,
   tp_tempo: "12.0 seg",
   tp_atividade: "100%",

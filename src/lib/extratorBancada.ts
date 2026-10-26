@@ -29,7 +29,7 @@ export const EXAMES_DESCARTAR_AUTOMATIZADOS = [
 ];
 
 export interface ExameClassificado {
-  setor: "Urinálise" | "Sangue Oculto" | "Coagulograma" | "VDRL" | "Testes Rápidos" | "Provas Inflamatórias" | "Outro";
+  setor: "Urinálise" | "Sangue Oculto" | "Coagulograma" | "VDRL" | "Testes Rápidos" | "Provas Inflamatórias" | "Tipagem Sanguínea" | "Outro";
   nomePadrao: string;
 }
 
@@ -68,6 +68,18 @@ export function classificarExameBancada(textoExame: string): ExameClassificado |
   // 1.1 Proteinúria / Proteinúria Rápida
   if (norm.includes("PROTEINURIA") || norm.includes("PROTEINA URINARIA")) {
     return { setor: "Urinálise", nomePadrao: "Proteinúria Rápida" };
+  }
+
+    // 2.5 Grupo Sanguíneo ABO e Fator Rh
+  if (
+    norm.includes("GRUPO ABO") ||
+    norm.includes("GRUPO SANGUINEO") ||
+    norm.includes("FATOR RH") ||
+    norm.includes("TIPAGEM SANGUINEA") ||
+    norm.includes("DETERMINACAO DIRETA E REVERSA DE GRUPO ABO") ||
+    (norm.includes("ABO") && norm.includes("RH"))
+  ) {
+    return { setor: "Tipagem Sanguínea", nomePadrao: "Grupo Sanguíneo ABO e Fator Rh" };
   }
 
   // 2. Sangue Oculto (PSO / SOF)
@@ -295,6 +307,8 @@ export function processarMatrizLinhasBancada(
         } else {
           paciente.tem_urina = true;
         }
+      } else if (ex.setor === "Tipagem Sanguínea") {
+        paciente.tem_abo_rh = true;
       } else if (ex.setor === "Sangue Oculto") {
         paciente.tem_pso = true;
       } else if (ex.setor === "Coagulograma") {

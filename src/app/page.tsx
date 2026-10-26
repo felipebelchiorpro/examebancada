@@ -10,6 +10,7 @@ import {
 import { QuickChipSelect } from "@/components/QuickChipSelect";
 import { StatusBadge } from "@/components/StatusBadge";
 import { RelatorioBancadaDiaPrintView } from "@/components/RelatorioBancadaDiaPrintView";
+import { MapaBancadaPrintView } from "@/components/MapaBancadaPrintView";
 import {
   Scan,
   UserCheck,
@@ -44,7 +45,10 @@ export default function BancadaPage() {
   const [bancadaAtiva, setBancadaAtiva] = useState<"urina" | "imuno" | "coag" | "pso">("urina");
   const [rotinaDia, setRotinaDia] = useState<RotinaItem[]>([]);
   const [laudosDia, setLaudosDia] = useState<LaudoUrina[]>([]);
-  const [modoRelatorio, setModoRelatorio] = useState<"caixas" | "tabela">("caixas");
+  const [modoRelatorio, setModoRelatorio] = useState<"tiras" | "caixas" | "tabela">("tiras");
+  const [tipoImpressao, setTipoImpressao] = useState<"triagem" | "resultados">("triagem");
+  const [temAboRh, setTemAboRh] = useState<boolean>(false);
+  const [resultadoAboRh, setResultadoAboRh] = useState<string>("O Positivo (+)");
   const [dataHoje, setDataHoje] = useState<string>("");
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [prontuario, setProntuario] = useState<string>("");
@@ -423,6 +427,8 @@ export default function BancadaPage() {
         resultado_vhs: temVhs ? resultadoVhs : undefined,
         tem_vdrl: temVdrl,
         resultado_vdrl: temVdrl ? (vdrlAcumularLote ? "Aguardando lote semanal" : resultadoVdrl) : undefined,
+        tem_abo_rh: temAboRh,
+        resultado_abo_rh: temAboRh ? resultadoAboRh : undefined,
         vdrl_acumular_lote: temVdrl ? vdrlAcumularLote : undefined,
         tem_pcr: temProvasInflamatorias,
         resultado_pcr: temProvasInflamatorias ? resultadoPcr : undefined,
@@ -518,6 +524,8 @@ export default function BancadaPage() {
     setCoagTp1("");
     setCoagTtpa1("");
     setTemProteinuriaRapida(false);
+    setTemAboRh(false);
+    setResultadoAboRh("O Positivo (+)");
     setResultadoProteinuriaRapida("Negativo");
     setForm({
       data_hora: "",
@@ -601,14 +609,31 @@ export default function BancadaPage() {
               <RefreshCw className="w-3.5 h-3.5" />
               <span>Atualizar</span>
             </button>
+                        <button
+              type="button"
+              onClick={() => {
+                setTipoImpressao("triagem");
+                setTimeout(() => window.print(), 100);
+              }}
+              disabled={rotinaDia.length === 0}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5"
+              title="Imprime a folha de trabalho simples da bancada para saber quais exames fazer"
+            >
+              <ListOrdered className="w-3.5 h-3.5 text-sky-400" />
+              <span>1. Imprimir Triagem do Dia</span>
+            </button>
             <button
               type="button"
-              onClick={() => window.print()}
-              disabled={rotinaDia.length === 0 && laudosDia.length === 0}
-              className="px-4 py-1.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5"
+              onClick={() => {
+                setTipoImpressao("resultados");
+                setTimeout(() => window.print(), 100);
+              }}
+              disabled={laudosDia.length === 0 && rotinaDia.length === 0}
+              className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5"
+              title="Imprime as tiras recortáveis de laudo de urina e bancada com todos os resultados para anexar nas requisições"
             >
-              <Printer className="w-4 h-4" />
-              <span>Imprimir Relatório do Dia (Caixas Menores)</span>
+              <Printer className="w-3.5 h-3.5" />
+              <span>2. Imprimir Resultados Finais (Canhotos/Tiras)</span>
             </button>
           </div>
         )}
@@ -1566,6 +1591,15 @@ export default function BancadaPage() {
                 {temVhs ? "✓ VHS" : "+ VHS"}
               </button>
 
+                            <button
+                type="button"
+                onClick={() => setTemAboRh(!temAboRh)}
+                className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition ${
+                  temAboRh ? "bg-rose-600 text-white border-rose-600" : "bg-slate-50 text-slate-700 border-slate-300"
+                }`}
+              >
+                {temAboRh ? "✓ Tipagem ABO/Rh" : "+ Tipagem ABO/Rh"}
+              </button>
               <button
                 type="button"
                 onClick={() => setTemVdrl(!temVdrl)}
@@ -1660,6 +1694,38 @@ export default function BancadaPage() {
                     { label: "20 mm/h", value: "20 mm/1ª hora" },
                     { label: "30 mm/h", value: "30 mm/1ª hora", isAbnormal: true },
                     { label: "> 50 mm/h (Aumentado)", value: "> 50 mm/1ª hora", isAbnormal: true },
+                  ]}
+                />
+              </div>
+            )}
+
+                        {/* CARD TIPAGEM SANGUÍNEA ABO E FATOR RH */}
+            {temAboRh && (
+              <div className="p-3 bg-rose-50/50 border border-rose-200 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between pb-1.5 border-b border-rose-100">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-rose-950 uppercase">
+                      🩸 Tipagem Sanguínea (ABO e Fator Rh)
+                    </span>
+                    <span className="text-[10px] text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded font-medium">
+                      Prova Direta & Reversa
+                    </span>
+                  </div>
+                </div>
+                <QuickChipSelect
+                  label="Resultado ABO / Fator Rh"
+                  sublabel="Selecione o grupo sanguíneo e fator Rh observado"
+                  value={resultadoAboRh}
+                  onChange={(val) => setResultadoAboRh(val)}
+                  options={[
+                    { label: "O Positivo (+)", value: "O Positivo (+)" },
+                    { label: "A Positivo (+)", value: "A Positivo (+)" },
+                    { label: "B Positivo (+)", value: "B Positivo (+)" },
+                    { label: "AB Positivo (+)", value: "AB Positivo (+)" },
+                    { label: "O Negativo (-)", value: "O Negativo (-)", isAbnormal: true },
+                    { label: "A Negativo (-)", value: "A Negativo (-)", isAbnormal: true },
+                    { label: "B Negativo (-)", value: "B Negativo (-)", isAbnormal: true },
+                    { label: "AB Negativo (-)", value: "AB Negativo (-)", isAbnormal: true },
                   ]}
                 />
               </div>
@@ -1958,27 +2024,34 @@ export default function BancadaPage() {
         </div>
       )}
 
-      {/* ÁREA DE IMPRESSÃO (EXCLUSIVA PARA WINDOW.PRINT: RELATÓRIO DO DIA EM CAIXAS MENORES) */}
+            {/* ÁREA DE IMPRESSÃO (EXCLUSIVA PARA WINDOW.PRINT) */}
       <div className="hidden print:block">
-        <RelatorioBancadaDiaPrintView
-          laudos={
-            laudosDia.length > 0
-              ? laudosDia
-              : rotinaDia.map((r) => ({
-                  prontuario: r.prontuario,
-                  nome_paciente: r.nome_paciente,
-                  idade_sexo: r.idade_sexo,
-                  posto_unidade: r.posto_unidade,
-                  solicitante: r.solicitante,
-                  data_hora: dataHoje || "2026-10-26",
-                  status: (r.tem_laudo ? "finalizado" : "rascunho") as StatusLaudo,
-                  observacoes: "",
-                  ...VALORES_PADRAO_NORMAL,
-                }))
-          }
-          dataSelecionada={dataHoje}
-          modo={modoRelatorio}
-        />
+        {tipoImpressao === "triagem" ? (
+          /* RELATÓRIO 1: TRIAGEM DO DIA (MAPA SIMPLES PARA BANCADA) */
+          <MapaBancadaPrintView pacientes={rotinaDia} dataRotina={dataHoje} />
+        ) : (
+          /* RELATÓRIO 2: FINAL DA ROTINA (RESULTADOS CERTINHOS EM CANHOTOS/TIRAS COMO NA FOTO) */
+          <RelatorioBancadaDiaPrintView
+            laudos={
+              laudosDia.length > 0
+                ? laudosDia
+                : rotinaDia.map((r) => ({
+                    prontuario: r.prontuario,
+                    nome_paciente: r.nome_paciente,
+                    idade_sexo: r.idade_sexo,
+                    posto_unidade: r.posto_unidade,
+                    solicitante: r.solicitante,
+                    data_hora: dataHoje || "2026-10-26",
+                    status: (r.tem_laudo ? "finalizado" : "rascunho") as StatusLaudo,
+                    observacoes: "",
+                    tem_abo_rh: r.tem_abo_rh,
+                    ...VALORES_PADRAO_NORMAL,
+                  }))
+            }
+            dataSelecionada={dataHoje}
+            modo="tiras"
+          />
+        )}
       </div>
     </div>
   );

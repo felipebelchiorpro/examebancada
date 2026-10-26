@@ -28,6 +28,7 @@ export const MapaBancadaPrintView: React.FC<MapaBancadaPrintViewProps> = ({
   const totalBeta = pacientes.filter((p) => p.tem_beta_hcg || p.exame?.toUpperCase().includes("BETA") || p.exame?.toUpperCase().includes("HCG")).length;
   const totalVhs = pacientes.filter((p) => p.tem_vhs || p.exame?.toUpperCase().includes("VHS")).length;
   const totalVdrl = pacientes.filter((p) => p.tem_vdrl || p.exame?.toUpperCase().includes("VDRL")).length;
+  const totalAbo = pacientes.filter((p) => p.tem_abo_rh || p.exame?.toUpperCase().includes("ABO") || p.exame?.toUpperCase().includes("GRUPO")).length;
   const totalCoag = pacientes.filter((p) => p.tem_coagulograma || p.exame?.toUpperCase().includes("COAGULO") || p.exame?.toUpperCase().includes("TAP") || p.exame?.toUpperCase().includes("TTPA")).length;
 
   return (
@@ -64,7 +65,8 @@ export const MapaBancadaPrintView: React.FC<MapaBancadaPrintViewProps> = ({
         <span>👶 Beta-HCG: {totalBeta}</span>
         <span>⏱️ VHS: {totalVhs}</span>
         <span>🔬 VDRL: {totalVdrl}</span>
-        <span>🩸 Coagulograma: {totalCoag}</span>
+        <span>🩸 ABO/Rh: {totalAbo}</span>
+        <span>⏱️ Coagulograma: {totalCoag}</span>
       </div>
 
       {/* TABELA DE BANCADA COM ESPAÇO PARA ANOTAÇÃO */}
@@ -80,6 +82,8 @@ export const MapaBancadaPrintView: React.FC<MapaBancadaPrintViewProps> = ({
             <th className="border border-black py-1 px-1.5 text-center w-12">Beta</th>
             <th className="border border-black py-1 px-1.5 text-center w-12">VHS</th>
             <th className="border border-black py-1 px-1.5 text-center w-14">VDRL</th>
+            <th className="border border-black py-1 px-1.5 text-center w-14">ABO/Rh</th>
+            <th className="border border-black py-1 px-1.5 text-center w-14">Coag</th>
             <th className="border border-black py-1 px-2 text-left w-48">Anotação / Resultado Manual</th>
           </tr>
         </thead>
@@ -90,6 +94,8 @@ export const MapaBancadaPrintView: React.FC<MapaBancadaPrintViewProps> = ({
             const ehBeta = p.tem_beta_hcg || p.exame?.toUpperCase().includes("BETA") || p.exame?.toUpperCase().includes("HCG");
             const ehVhs = p.tem_vhs || p.exame?.toUpperCase().includes("VHS");
             const ehVdrl = p.tem_vdrl || p.exame?.toUpperCase().includes("VDRL");
+            const ehAbo = p.tem_abo_rh || p.exame?.toUpperCase().includes("ABO") || p.exame?.toUpperCase().includes("GRUPO");
+            const ehCoag = p.tem_coagulograma || p.exame?.toUpperCase().includes("COAGULO") || p.exame?.toUpperCase().includes("TAP");
 
             return (
               <tr key={p.prontuario + idx} className="border-b border-black" style={{ height: "26px" }}>
@@ -113,6 +119,12 @@ export const MapaBancadaPrintView: React.FC<MapaBancadaPrintViewProps> = ({
                 </td>
                 <td className="border border-black py-1 px-1 text-center font-bold">
                   {ehVdrl ? "[ X ]" : "-"}
+                </td>
+                <td className="border border-black py-1 px-1 text-center font-bold">
+                  {ehAbo ? "[ X ]" : "-"}
+                </td>
+                <td className="border border-black py-1 px-1 text-center font-bold">
+                  {ehCoag ? "[ X ]" : "-"}
                 </td>
                 {/* Espaço em branco para o operador escrever à mão com caneta */}
                 <td className="border border-black py-1 px-2 bg-slate-50/50 print:bg-white"></td>

@@ -134,22 +134,39 @@ export default function ConfiguracoesPage() {
           </div>
 
           <div
-            className={`p-3 rounded-xl border text-xs ${
+            className={`p-4 rounded-xl border text-xs space-y-2 ${
               sheetsInfo?.isConfigured && sheetsInfo?.ok
                 ? "bg-teal-50 text-teal-900 border-teal-200"
                 : "bg-amber-50 text-amber-900 border-amber-200"
             }`}
           >
-            <p className="font-semibold">{sheetsInfo?.message || "Verificando..."}</p>
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-bold text-sm">{sheetsInfo?.message || "Verificando..."}</p>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                sheetsInfo?.isConfigured && sheetsInfo?.ok
+                  ? "bg-teal-200 text-teal-900"
+                  : "bg-amber-200 text-amber-900"
+              }`}>
+                {sheetsInfo?.isConfigured && sheetsInfo?.ok ? "Online / Nuvem" : "Modo Local / Demo"}
+              </span>
+            </div>
+
             {sheetsInfo?.clientEmail && (
-              <p className="text-[11px] mt-1 font-mono text-slate-600">
-                Service Account: {sheetsInfo.clientEmail}
+              <p className="text-[11px] font-mono text-slate-700 bg-white/70 p-1.5 rounded border border-slate-200">
+                <b>E-mail da Conta:</b> {sheetsInfo.clientEmail}
               </p>
             )}
             {sheetsInfo?.sheetId && (
-              <p className="text-[11px] font-mono text-slate-600">
-                Sheet ID: {sheetsInfo.sheetId}
+              <p className="text-[11px] font-mono text-slate-700 bg-white/70 p-1.5 rounded border border-slate-200">
+                <b>ID da Planilha:</b> {sheetsInfo.sheetId}
               </p>
+            )}
+
+            {sheetsInfo?.diagnostico?.orientacao && (
+              <div className="bg-sky-50 border border-sky-300 text-sky-950 p-3 rounded-lg text-xs leading-relaxed mt-2">
+                <p className="font-bold mb-1">ℹ️ Importante sobre a Vercel:</p>
+                <p>{sheetsInfo.diagnostico.orientacao}</p>
+              </div>
             )}
           </div>
         </div>

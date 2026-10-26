@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { ensureSheetsExist, getGoogleSheetsCredentials, isGoogleSheetsConfigured } from "@/lib/googleSheets";
 
-// Garantir que a Vercel sempre execute esta rota dinamicamente e nunca sirva cache estático
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -9,20 +8,24 @@ export async function GET() {
   const { clientEmail, privateKey, sheetId } = getGoogleSheetsCredentials();
   const isConfigured = isGoogleSheetsConfigured();
 
+  const envsFound = {
+    GOOGLE_CREDENTIALS_BASE64: Boolean(process.env.GOOGLE_CREDENTIALS_BASE64),
+    GOOGLE_SHEETS_PRIVATE_KEY: Boolean(process.env.GOOGLE_SHEETS_PRIVATE_KEY || process.env.GOOGLE_PRIVATE_KEY || process.env.PRIVATE_KEY),
+    GOOGLE_SHEETS_CLIENT_EMAIL: Boolean(process.env.GOOGLE_SHEETS_CLIENT_EMAIL || process.env.CLIENT_EMAIL),
+    GOOGLE_SHEETS_SHEET_ID: Boolean(process.env.GOOGLE_SHEETS_SHEET_ID || process.env.SHEET_ID),
+  };
+
   if (!isConfigured) {
     return NextResponse.json({
       ok: false,
       isConfigured: false,
-      message: "Variáveis de ambiente do Google Sheets incompletas na Vercel.",
-      missing: {
-        GOOGLE_SHEETS_CLIENT_EMAIL: !clientEmail,
-        GOOGLE_SHEETS_PRIVATE_KEY: !privateKey,
-        GOOGLE_SHEETS_SHEET_ID: !sheetId,
-      },
+      message: "Chave Privada não detectada no ambiente desta versão na Vercel.",
       diagnostico: {
-        emailDetectado: clientEmail ? (clientEmail.slice(0, 4) + "..." + clientEmail.slice(-15)) : "NÃO ENCONTRADO",
-        sheetIdDetectado: sheetId ? (sheetId.slice(0, 6) + "..." + sheetId.slice(-4)) : "NÃO ENCONTRADO",
-        chavePrivadaValida: privateKey.includes("BEGIN PRIVATE KEY"),
+        emailDetectado: clientEmail || "NÃO ENCONTRADO",
+        sheetIdDetectado: sheetId || "NÃO ENCONTRADO",
+        chavePrivadaValida: privateKey ? privateKey.includes("BEGIN PRIVATE KEY") : false,
+        variaveisDetectadas: envsFound,
+        orientacao: "Na Vercel, após cadastrar ou alterar variáveis de ambiente em Settings > Environment Variables, é obrigatório clicar em 'Redeploy' no painel da Vercel para que as variáveis entrem em vigor.",
       },
     });
   }
@@ -39,6 +42,8 @@ export async function GET() {
       emailConfigurado: true,
       chavePrivadaValida: privateKey.includes("BEGIN PRIVATE KEY"),
       sheetIdConfigurado: true,
+      variaveisDetectadas: envsFound,
+      detalhesGoogle: result.ok ? "Conexão com Google Sheets bem-sucedida!" : result.message,
     },
   });
 }

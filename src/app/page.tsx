@@ -12,6 +12,11 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { RelatorioBancadaDiaPrintView } from "@/components/RelatorioBancadaDiaPrintView";
 import { MapaBancadaPrintView } from "@/components/MapaBancadaPrintView";
 import {
+  Eye,
+  X,
+  FileText,
+  Filter,
+  Calendar,
   Scan,
   UserCheck,
   CheckCircle2,
@@ -57,6 +62,70 @@ export default function BancadaPage() {
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "warning" | "error" } | null>(null);
+
+  // Estados para Filtros, Pesquisa e Prévia no Computador
+  const [filtroTexto, setFiltroTexto] = useState<string>("");
+  const [filtroStatus, setFiltroStatus] = useState<"todos" | "pendentes" | "concluidos">("todos");
+  const [filtroTipoExame, setFiltroTipoExame] = useState<string>("todos");
+  const [previewImpressao, setPreviewImpressao] = useState<"triagem" | "canhotos" | null>(null);
+
+  // Contadores e Filtros Inteligentes
+  const concluidosCount = React.useMemo(() => {
+    return rotinaDia.filter((p) => p.tem_laudo || laudosDia.some((l) => l.prontuario === p.prontuario)).length;
+  }, [rotinaDia, laudosDia]);
+
+  const pendentesCount = React.useMemo(() => {
+    return rotinaDia.length - concluidosCount;
+  }, [rotinaDia, concluidosCount]);
+
+  const totalExamesContagem = React.useMemo(() => {
+    let count = 0;
+    for (const p of rotinaDia) {
+      if (p.tem_urina || p.exame?.toUpperCase().includes("URINA") || p.exame?.toUpperCase().includes("EAS")) count++;
+      if (p.tem_abo_rh || p.exame?.toUpperCase().includes("ABO") || p.exame?.toUpperCase().includes("GRUPO") || p.exame?.toUpperCase().includes("RH")) count++;
+      if (p.tem_pso || p.exame?.toUpperCase().includes("PSO") || p.exame?.toUpperCase().includes("SANGUE OCULTO")) count++;
+      if (p.tem_vdrl || p.exame?.toUpperCase().includes("VDRL") || p.exame?.toUpperCase().includes("SIFILIS")) count++;
+      if (p.tem_beta_hcg || p.exame?.toUpperCase().includes("BETA") || p.exame?.toUpperCase().includes("HCG")) count++;
+      if (p.tem_coagulograma || p.exame?.toUpperCase().includes("COAGULO") || p.exame?.toUpperCase().includes("TAP")) count++;
+    }
+    return count || rotinaDia.length;
+  }, [rotinaDia]);
+
+  const rotinaFiltradaDesktop = React.useMemo(() => {
+    return rotinaDia.filter((item) => {
+      if (filtroTexto.trim()) {
+        const query = filtroTexto.toLowerCase().trim();
+        const bateNome = item.nome_paciente.toLowerCase().includes(query);
+        const batePront = item.prontuario.toLowerCase().includes(query);
+        if (!bateNome && !batePront) return false;
+      }
+      const laudoGravado = laudosDia.find((l) => l.prontuario === item.prontuario);
+      const isConcluido = item.tem_laudo || Boolean(laudoGravado);
+      if (filtroStatus === "pendentes" && isConcluido) return false;
+      if (filtroStatus === "concluidos" && !isConcluido) return false;
+
+      if (filtroTipoExame !== "todos") {
+        const exUpper = (item.exame || "").toUpperCase();
+        if (filtroTipoExame === "urina" && !item.tem_urina && !exUpper.includes("URINA") && !exUpper.includes("EAS")) return false;
+        if (filtroTipoExame === "abo" && !item.tem_abo_rh && !exUpper.includes("ABO") && !exUpper.includes("GRUPO") && !exUpper.includes("RH")) return false;
+        if (filtroTipoExame === "pso" && !item.tem_pso && !exUpper.includes("PSO") && !exUpper.includes("SANGUE OCULTO")) return false;
+        if (filtroTipoExame === "vdrl" && !item.tem_vdrl && !exUpper.includes("VDRL") && !exUpper.includes("SIFILIS")) return false;
+        if (filtroTipoExame === "coag" && !item.tem_coagulograma && !exUpper.includes("COAGULO") && !exUpper.includes("TAP") && !exUpper.includes("TP")) return false;
+      }
+
+      return true;
+    });
+  }, [rotinaDia, laudosDia, filtroTexto, filtroStatus, filtroTipoExame]);
+
+  const handleImprimirTiragem = () => {
+    setTipoImpressao("triagem");
+    setTimeout(() => window.print(), 100);
+  };
+
+  const handleImprimirCanhotos = () => {
+    setTipoImpressao("resultados");
+    setTimeout(() => window.print(), 100);
+  };
 
   // Form de Laudo
   const [form, setForm] = useState<Omit<LaudoUrina, "prontuario" | "nome_paciente">>({
@@ -568,37 +637,39 @@ export default function BancadaPage() {
         </div>
       )}
 
-      {/* SELETOR DE MODO: COMPUTADOR (PAINEL FISCAL & ARQUIVOS) vs CELULAR (BANCADA COM LUVAS) */}
-      <div className="max-w-6xl mx-auto px-3 sm:px-6 pt-3 pb-1 print:hidden flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 mb-2">
-        <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-xl p-1 shadow-2xs">
-          <button
-            type="button"
-            onClick={() => setModoTela("desktop")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-              modoTela === "desktop"
-                ? "bg-slate-900 text-white shadow-2xs"
-                : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            <Monitor className="w-3.5 h-3.5" />
-            <span>🖥️ Computador (Painel Fiscal & Arquivos)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setModoTela("mobile")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-              modoTela === "mobile"
-                ? "bg-sky-700 text-white shadow-2xs"
-                : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>📱 Celular (Bancada com Luvas)</span>
-          </button>
-        </div>
+      {/* SELETOR DE MODO E BARRA SUPERIOR DESKTOP */}
+      <div className="bg-white border-b border-slate-200 sticky top-16 z-30 print:hidden shadow-xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          {/* Alternador de Modo */}
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setModoTela("desktop")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
+                modoTela === "desktop"
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
+            >
+              <Monitor className="w-4 h-4 text-sky-400" />
+              <span>🖥️ Computador (Painel & Impressão)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setModoTela("mobile")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
+                modoTela === "mobile"
+                  ? "bg-sky-700 text-white shadow-sm"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
+            >
+              <Smartphone className="w-4 h-4 text-amber-300" />
+              <span>📱 Bancada (Digitação com Luvas)</span>
+            </button>
+          </div>
 
-        {modoTela === "desktop" && (
-          <div className="flex items-center gap-2">
+          {/* Botões Rápidos e Sincronização */}
+          <div className="flex items-center gap-2 self-end sm:self-auto">
             <button
               type="button"
               onClick={() => {
@@ -611,87 +682,288 @@ export default function BancadaPage() {
               <RefreshCw className="w-3.5 h-3.5" />
               <span>Atualizar</span>
             </button>
-                        <button
-              type="button"
-              onClick={() => {
-                setTipoImpressao("triagem");
-                setTimeout(() => window.print(), 100);
-              }}
-              disabled={rotinaDia.length === 0}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5"
-              title="Imprime a folha de trabalho simples da bancada para saber quais exames fazer"
-            >
-              <ListOrdered className="w-3.5 h-3.5 text-sky-400" />
-              <span>1. Imprimir Triagem do Dia</span>
-            </button>
+
+            {/* Atalho direto de impressão da tiragem */}
             <button
               type="button"
-              onClick={() => {
-                setTipoImpressao("resultados");
-                setTimeout(() => window.print(), 100);
-              }}
-              disabled={laudosDia.length === 0 && rotinaDia.length === 0}
-              className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5"
-              title="Imprime as tiras recortáveis de laudo de urina e bancada com todos os resultados para anexar nas requisições"
+              onClick={handleImprimirTiragem}
+              disabled={rotinaDia.length === 0}
+              className="px-3.5 py-1.5 bg-sky-700 hover:bg-sky-800 disabled:opacity-40 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5"
+              title="Imprimir folha de tiragem da bancada agora"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>2. Imprimir Resultados Finais (Canhotos/Tiras)</span>
+              <span>Imprimir Tiragem ({rotinaDia.length})</span>
             </button>
           </div>
-        )}
+        </div>
       </div>
 
       {modoTela === "desktop" ? (
-        /* PAINEL DO COMPUTADOR: GESTÃO FISCAL, SUBIR ARQUIVOS E ACOMPANHAR BANCADA AO VIVO */
-        <div className="max-w-6xl mx-auto px-3 sm:px-6 pt-3 pb-20 print:hidden space-y-4">
-          {/* CABEÇALHO DO COMPUTADOR */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+        /* ============================================================== */
+        /* PAINEL DO COMPUTADOR: DESIGN CLÍNICO, LIMPO E PROFISSIONAL     */
+        /* ============================================================== */
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-5 pb-24 print:hidden space-y-6">
+
+          {/* 1. CABEÇALHO INSTITUCIONAL & KPIS DO DIA */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-slate-100 pb-5">
               <div>
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
-                  <h1 className="text-xl font-black text-slate-900 tracking-tight">
-                    Painel Fiscal & Gestão de Bancada
+                <div className="flex items-center gap-2.5">
+                  <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+                    Painel de Bancada & Gestão da Rotina
                   </h1>
+                  <span className="bg-sky-50 text-sky-800 border border-sky-200 text-[11px] font-black px-2.5 py-0.5 rounded-full">
+                    SUS • Caconde
+                  </span>
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Suba o arquivo bruto do Conecta SUS, acompanhe o progresso da bancada em tempo real e imprima o relatório em caixas menores para anexar junto às requisições.
+                <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
+                  Gerencie a rotina diária do laboratório municipal. Imprima a <b>folha de tiragem</b> para a preparação dos tubos e, ao término, os <b>canhotos recortáveis</b> para grampear nas requisições.
                 </p>
               </div>
 
-              {/* Indicadores em Tempo Real */}
-              <div className="flex items-center gap-3">
-                <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-center">
-                  <div className="text-xl font-black text-slate-900">{rotinaDia.length}</div>
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">Total Amostras</div>
-                </div>
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 text-center">
-                  <div className="text-xl font-black text-emerald-800">
-                    {rotinaDia.filter((p) => p.tem_laudo || laudosDia.some((l) => l.prontuario === p.prontuario)).length}
+              {/* KPIS / Indicadores em Tempo Real */}
+              <div className="grid grid-cols-3 gap-3">
+                {/* Total */}
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 text-center min-w-[110px]">
+                  <div className="text-2xl font-black text-slate-900">{rotinaDia.length}</div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mt-0.5">
+                    Pacientes
                   </div>
-                  <div className="text-[10px] font-bold text-emerald-700 uppercase">Concluídas</div>
-                </div>
-                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 text-center">
-                  <div className="text-xl font-black text-amber-800">
-                    {rotinaDia.filter((p) => !p.tem_laudo && !laudosDia.some((l) => l.prontuario === p.prontuario)).length}
+                  <div className="text-[10px] font-mono text-slate-400 mt-0.5">
+                    {totalExamesContagem} exames
                   </div>
-                  <div className="text-[10px] font-bold text-amber-700 uppercase">Pendentes</div>
+                </div>
+
+                {/* Concluídas */}
+                <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-3.5 text-center min-w-[110px]">
+                  <div className="text-2xl font-black text-emerald-800">{concluidosCount}</div>
+                  <div className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider mt-0.5">
+                    Concluídos
+                  </div>
+                  <div className="text-[10px] font-bold text-emerald-600 mt-0.5">
+                    {Math.round((concluidosCount / (rotinaDia.length || 1)) * 100)}% da rotina
+                  </div>
+                </div>
+
+                {/* Pendentes */}
+                <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-3.5 text-center min-w-[110px]">
+                  <div className="text-2xl font-black text-amber-800">{pendentesCount}</div>
+                  <div className="text-[10px] font-bold text-amber-700 uppercase tracking-wider mt-0.5">
+                    Pendentes
+                  </div>
+                  <div className="text-[10px] font-bold text-amber-600 mt-0.5">
+                    Na bancada
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* SEÇÃO DE SUBIR ARQUIVOS (PDF OU PLANILHA SUS) */}
-            <div className="mt-4 p-5 bg-gradient-to-r from-sky-50 to-slate-50 border-2 border-dashed border-sky-300 rounded-2xl text-center">
-              <UploadCloud className="w-8 h-8 text-sky-600 mx-auto mb-2" />
-              <h3 className="font-bold text-sm text-slate-900">
-                Subir Arquivo de Coletas do Dia (PDF ou Planilha Conecta SUS)
-              </h3>
-              <p className="text-xs text-slate-500 max-w-lg mx-auto mt-1 mb-3">
-                O sistema lê o arquivo, ignora exames automatizados de rotina e extrai diretamente Urina, PSO, VDRL, Coagulograma e Testes Rápidos.
-              </p>
-              <label className="inline-flex items-center gap-2 px-5 py-2.5 bg-sky-700 hover:bg-sky-800 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer transition active:scale-95">
-                <FileSpreadsheet className="w-4 h-4" />
-                <span>{isUploading ? "Processando e Enviando..." : "Selecionar Arquivo (PDF ou Excel)"}</span>
+            {/* SEÇÃO NOBRE: CENTRAL DE IMPRESSÃO (DESTAQUE TOTAL) */}
+            <div className="mt-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-sky-100 text-sky-800 flex items-center justify-center">
+                    <Printer className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-black uppercase tracking-wider text-slate-900">
+                      Central de Impressão de Relatórios
+                    </h2>
+                    <p className="text-[11px] text-slate-500">
+                      Selecione qual relatório você deseja imprimir agora
+                    </p>
+                  </div>
+                </div>
+                <div className="text-xs font-mono text-slate-500">
+                  Data: <b>{new Date().toLocaleDateString("pt-BR")}</b>
+                </div>
+              </div>
+
+              {/* CARDS DAS DUAS IMPRESSÕES */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                {/* CARD 1: FOLHA DE TIRAGEM DO DIA (INÍCIO DO PLANTÃO) */}
+                <div className="relative overflow-hidden rounded-2xl border-2 border-sky-400/80 bg-gradient-to-br from-sky-50/60 via-white to-sky-50/30 p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+                  <div className="absolute top-0 right-0 bg-sky-600 text-white text-[9.5px] font-black uppercase px-3 py-1 rounded-bl-xl tracking-wider">
+                    Início do Plantão
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2.5 mb-2">
+                      <div className="w-9 h-9 rounded-xl bg-sky-600 text-white flex items-center justify-center shadow-md shadow-sky-600/30">
+                        <ListOrdered className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-black text-slate-900">
+                          1. Folha de Tiragem da Bancada
+                        </h3>
+                        <p className="text-[11px] font-bold text-sky-700">
+                          Estilo Planilha: Exame | Paciente | Prontuário | Resultado
+                        </p>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+                      Gera a tabela completa organizada por exame (Urina, ABO/Rh, VDRL, PSO, Coagulograma) para prender na <b>prancheta de trabalho</b>, conferir os tubos nas estantes e anotar resultados à caneta.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 pt-3 border-t border-sky-200/80">
+                    <div className="flex items-center justify-between text-xs text-slate-600">
+                      <span>Total de exames a realizar:</span>
+                      <span className="font-bold font-mono text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
+                        {totalExamesContagem} exames ({rotinaDia.length} pacientes)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleImprimirTiragem}
+                        disabled={rotinaDia.length === 0}
+                        className="flex-1 py-3 px-4 bg-sky-700 hover:bg-sky-800 active:bg-sky-900 disabled:opacity-40 text-white font-black text-xs sm:text-sm rounded-xl shadow-md shadow-sky-700/20 transition flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
+                      >
+                        <Printer className="w-4 h-4" />
+                        <span>Imprimir Tiragem do Dia</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setPreviewImpressao("triagem")}
+                        disabled={rotinaDia.length === 0}
+                        className="py-3 px-3.5 bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 text-slate-700 font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        title="Ver prévia da folha de tiragem"
+                      >
+                        <Eye className="w-4 h-4 text-slate-600" />
+                        <span className="hidden sm:inline">Prévia</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* CARD 2: CANHOTOS DE RESULTADOS FINAIS (FIM DA ROTINA) */}
+                <div className="relative overflow-hidden rounded-2xl border-2 border-emerald-400/80 bg-gradient-to-br from-emerald-50/60 via-white to-emerald-50/30 p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+                  <div className="absolute top-0 right-0 bg-emerald-600 text-white text-[9.5px] font-black uppercase px-3 py-1 rounded-bl-xl tracking-wider">
+                    Fim do Plantão
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2.5 mb-2">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-600/30">
+                        <Printer className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-black text-slate-900">
+                          2. Canhotos de Resultados Finais
+                        </h3>
+                        <p className="text-[11px] font-bold text-emerald-700">
+                          Tiras Recortáveis (9 a 12 por Folha A4)
+                        </p>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-slate-600 mb-2 leading-relaxed">
+                      Gera as tiras prontas para recortar e colar nas requisições do SUS, com todos os parâmetros: <b>VOL, COR, ASP, PH, DENS, H, L, C, B, CRISTAIS e ABO/Rh</b>.
+                    </p>
+
+                    {/* Seletor de Formato do Relatório Final */}
+                    <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-fit text-[11px] mb-3">
+                      <span className="text-slate-500 text-[10px] font-bold px-1.5">Formato:</span>
+                      <button
+                        type="button"
+                        onClick={() => setModoRelatorio("tiras")}
+                        className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                          modoRelatorio === "tiras"
+                            ? "bg-emerald-600 text-white shadow-2xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        Tiras (9-12 p/ A4)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setModoRelatorio("caixas")}
+                        className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                          modoRelatorio === "caixas"
+                            ? "bg-emerald-600 text-white shadow-2xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        Caixas Médias
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setModoRelatorio("tabela")}
+                        className={`px-2.5 py-1 rounded-lg font-bold transition ${
+                          modoRelatorio === "tabela"
+                            ? "bg-emerald-600 text-white shadow-2xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        Tabela
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 pt-3 border-t border-emerald-200/80">
+                    <div className="flex items-center justify-between text-xs text-slate-600">
+                      <span>Laudos finalizados:</span>
+                      <span className="font-bold font-mono text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200">
+                        {concluidosCount} de {rotinaDia.length} concluídos
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleImprimirCanhotos}
+                        disabled={laudosDia.length === 0 && rotinaDia.length === 0}
+                        className="flex-1 py-3 px-4 bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 disabled:opacity-40 text-white font-black text-xs sm:text-sm rounded-xl shadow-md shadow-emerald-700/20 transition flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
+                      >
+                        <Printer className="w-4 h-4" />
+                        <span>Imprimir Canhotos Finais</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setPreviewImpressao("canhotos")}
+                        disabled={laudosDia.length === 0 && rotinaDia.length === 0}
+                        className="py-3 px-3.5 bg-white border border-slate-300 hover:bg-slate-100 disabled:opacity-40 text-slate-700 font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        title="Ver prévia dos canhotos recortáveis"
+                      >
+                        <Eye className="w-4 h-4 text-slate-600" />
+                        <span className="hidden sm:inline">Prévia</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* SEÇÃO DE SUBIR ARQUIVOS (PDF OU PLANILHA CONECTA SUS) */}
+            <div className="mt-6 p-5 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0 border border-sky-200">
+                  <UploadCloud className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                    Subir Novo Arquivo de Coletas do Dia (Conecta SUS)
+                    {rotinaDia.length > 0 && (
+                      <span className="text-[10.5px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.2 rounded-full">
+                        Ativa ({rotinaDia.length} pacientes)
+                      </span>
+                    )}
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Aceita o PDF diário ou Planilha Excel (.xlsx/.csv). O sistema filtra automaticamente Urina EAS, PSO, ABO/Rh, VDRL, Beta-HCG e Coagulograma.
+                  </p>
+                </div>
+              </div>
+
+              <label className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer transition active:scale-95 shrink-0">
+                <FileSpreadsheet className="w-4 h-4 text-sky-400" />
+                <span>{isUploading ? "Processando Arquivo..." : "Selecionar Arquivo (PDF ou Excel)"}</span>
                 <input
                   type="file"
                   accept=".pdf,.xlsx,.xls,.csv"
@@ -707,90 +979,232 @@ export default function BancadaPage() {
             </div>
           </div>
 
-          {/* TABELA DE ACOMPANHAMENTO DA BANCADA (EM TEMPO REAL) */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <h2 className="font-black text-sm text-slate-900 uppercase tracking-wide">
-                  Acompanhamento Fiscal dos Exames (Ao Vivo)
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Conforme a equipe salva os exames pelo celular, os resultados aparecem aqui para conferência e digitação
-                </p>
+          {/* 2. TABELA DE ACOMPANHAMENTO AO VIVO & LANÇAMENTO DE EXAMES */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+            {/* Topbar da Tabela com Filtros e Pesquisa */}
+            <div className="p-5 border-b border-slate-200 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-black text-base text-slate-900 tracking-tight flex items-center gap-2">
+                    Acompanhamento da Rotina & Lançamento de Resultados
+                    <span className="text-xs font-mono font-bold bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full">
+                      {rotinaFiltradaDesktop.length} exibidos
+                    </span>
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Resultados lançados pelo celular ou computador aparecem ao vivo para conferência e impressão.
+                  </p>
+                </div>
+
+                {/* Filtro Status (Todos / Pendentes / Concluídos) */}
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setFiltroStatus("todos")}
+                    className={`px-3 py-1.5 rounded-lg transition ${
+                      filtroStatus === "todos"
+                        ? "bg-white text-slate-900 shadow-xs font-black"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Todos ({rotinaDia.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFiltroStatus("pendentes")}
+                    className={`px-3 py-1.5 rounded-lg transition ${
+                      filtroStatus === "pendentes"
+                        ? "bg-amber-500 text-white shadow-xs font-black"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Pendentes ({pendentesCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFiltroStatus("concluidos")}
+                    className={`px-3 py-1.5 rounded-lg transition ${
+                      filtroStatus === "concluidos"
+                        ? "bg-emerald-600 text-white shadow-xs font-black"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Concluídos ({concluidosCount})
+                  </button>
+                </div>
               </div>
-              <div className="text-xs font-semibold text-slate-500">
-                {rotinaDia.length} paciente(s) na fila
+
+              {/* Linha de Busca e Filtro por Tipo de Exame */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                {/* Campo de Busca */}
+                <div className="relative flex-1 max-w-md">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={filtroTexto}
+                    onChange={(e) => setFiltroTexto(e.target.value)}
+                    placeholder="Buscar por paciente ou prontuário..."
+                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition"
+                  />
+                  {filtroTexto && (
+                    <button
+                      type="button"
+                      onClick={() => setFiltroTexto("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Filtro por Tipo de Exame */}
+                <div className="flex items-center gap-1.5 overflow-x-auto text-[11px] font-semibold scrollbar-none">
+                  <span className="text-slate-400 text-[10px] uppercase font-bold shrink-0">Filtrar:</span>
+                  {[
+                    { id: "todos", label: "Todos" },
+                    { id: "urina", label: "🧪 Urina EAS" },
+                    { id: "abo", label: "🩸 ABO/Rh" },
+                    { id: "pso", label: "💩 PSO" },
+                    { id: "vdrl", label: "🔬 VDRL" },
+                    { id: "coag", label: "⏱️ Coagulograma" },
+                  ].map((cat) => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setFiltroTipoExame(cat.id)}
+                      className={`px-2.5 py-1 rounded-lg border transition whitespace-nowrap ${
+                        filtroTipoExame === cat.id
+                          ? "bg-slate-900 text-white border-slate-900 font-bold"
+                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
-            {rotinaDia.length === 0 ? (
-              <div className="p-12 text-center text-slate-400">
-                <FileSpreadsheet className="w-12 h-12 mx-auto mb-3 opacity-40" />
-                <p className="font-bold text-sm text-slate-700">Nenhum exame cadastrado na rotina de hoje</p>
-                <p className="text-xs mt-1">Suba o arquivo PDF ou planilha do dia na caixa acima para iniciar.</p>
+            {/* Conteúdo da Tabela */}
+            {rotinaFiltradaDesktop.length === 0 ? (
+              <div className="p-16 text-center text-slate-400">
+                <FileSpreadsheet className="w-12 h-12 mx-auto mb-3 opacity-30 text-slate-400" />
+                <p className="font-bold text-sm text-slate-700">Nenhum paciente encontrado</p>
+                <p className="text-xs mt-1 text-slate-400">
+                  {rotinaDia.length === 0
+                    ? "Suba o arquivo PDF ou planilha do dia para carregar a rotina."
+                    : "Nenhum paciente corresponde aos filtros aplicados."}
+                </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px] border-b border-slate-200">
-                      <th className="py-2.5 px-3 text-center w-12">Tubo</th>
-                      <th className="py-2.5 px-3 text-center w-24">Prontuário</th>
-                      <th className="py-2.5 px-3">Paciente / Unidade</th>
-                      <th className="py-2.5 px-3">Exames Solicitados</th>
-                      <th className="py-2.5 px-3 text-center w-32">Status Bancada</th>
-                      <th className="py-2.5 px-3">Resultados Realizados</th>
+                    <tr className="bg-slate-50 text-slate-600 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                      <th className="py-3 px-3.5 text-center w-14">Tubo</th>
+                      <th className="py-3 px-3.5 text-center w-24">Prontuário</th>
+                      <th className="py-3 px-3.5">Paciente & Unidade</th>
+                      <th className="py-3 px-3.5">Exames Solicitados</th>
+                      <th className="py-3 px-3.5 text-center w-28">Status</th>
+                      <th className="py-3 px-3.5">Resultados Lançados</th>
+                      <th className="py-3 px-3.5 text-right w-36">Ação</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
-                    {rotinaDia.map((item, idx) => {
+                    {rotinaFiltradaDesktop.map((item, idx) => {
                       const laudoGravado = laudosDia.find(
                         (l) => l.prontuario === item.prontuario
                       );
                       const isConcluido = item.tem_laudo || Boolean(laudoGravado);
-
                       return (
-                        <tr key={item.prontuario + idx} className="hover:bg-slate-50/80 transition">
-                          <td className="py-2.5 px-3 text-center font-bold text-slate-700">
-                            #{idx + 1}
+                        <tr key={item.prontuario + idx} className="hover:bg-slate-50/80 transition group">
+                          {/* Número do Tubo */}
+                          <td className="py-3 px-3.5 text-center">
+                            <span className="font-black font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md text-[11px]">
+                              #{idx + 1}
+                            </span>
                           </td>
-                          <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-900">
+
+                          {/* Prontuário */}
+                          <td className="py-3 px-3.5 text-center font-mono font-bold text-sky-800">
                             {item.prontuario}
                           </td>
-                          <td className="py-2.5 px-3">
-                            <div className="font-bold text-slate-900">{item.nome_paciente}</div>
-                            <div className="text-[10.5px] text-slate-500">
-                              {item.idade_sexo} • {item.posto_unidade}
+
+                          {/* Paciente e Unidade */}
+                          <td className="py-3 px-3.5">
+                            <div className="font-bold text-slate-900 group-hover:text-sky-900 transition">
+                              {item.nome_paciente}
+                            </div>
+                            <div className="text-[10.5px] text-slate-500 font-normal mt-0.5">
+                              {item.idade_sexo || "Idade N/D"} • {item.posto_unidade || "Geral"}
                             </div>
                           </td>
-                          <td className="py-2.5 px-3 text-slate-700">
-                            <span className="font-semibold">{item.exame}</span>
+
+                          {/* Exames */}
+                          <td className="py-3 px-3.5">
+                            <div className="flex flex-wrap gap-1">
+                              {item.tem_urina && (
+                                <span className="bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold px-1.5 py-0.2 rounded">
+                                  Urina EAS
+                                </span>
+                              )}
+                              {item.tem_abo_rh && (
+                                <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold px-1.5 py-0.2 rounded">
+                                  ABO/Rh
+                                </span>
+                              )}
+                              {item.tem_vdrl && (
+                                <span className="bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold px-1.5 py-0.2 rounded">
+                                  VDRL
+                                </span>
+                              )}
+                              {item.tem_pso && (
+                                <span className="bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold px-1.5 py-0.2 rounded">
+                                  PSO
+                                </span>
+                              )}
+                              {item.tem_coagulograma && (
+                                <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-1.5 py-0.2 rounded">
+                                  Coagulograma
+                                </span>
+                              )}
+                              {!item.tem_urina && !item.tem_abo_rh && !item.tem_vdrl && !item.tem_pso && !item.tem_coagulograma && (
+                                <span className="text-slate-600 text-[11px] font-medium">
+                                  {item.exame || "Urina I"}
+                                </span>
+                              )}
+                            </div>
                           </td>
-                          <td className="py-2.5 px-3 text-center">
+
+                          {/* Status */}
+                          <td className="py-3 px-3.5 text-center">
                             {isConcluido ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
-                                <Check className="w-3 h-3" /> Concluído
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                <Check className="w-3.5 h-3.5 text-emerald-600" /> Concluído
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600">
-                                <Clock className="w-3 h-3" /> Aguardando
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                <Clock className="w-3.5 h-3.5 text-amber-600" /> Pendente
                               </span>
                             )}
                           </td>
-                          <td className="py-2.5 px-3 text-slate-800 font-mono text-[11px]">
+
+                          {/* Resultados Lançados */}
+                          <td className="py-3 px-3.5 text-slate-800 font-mono text-[11px]">
                             {laudoGravado ? (
                               <div className="space-y-0.5">
-                                <div>
-                                  <span className="font-bold text-sky-800">Urina:</span>{" "}
-                                  D: {laudoGravado.densidade || "1.020"} | pH: {laudoGravado.ph || "6.0"} | Prot: {laudoGravado.proteina || "Neg"} | Leu: {laudoGravado.leucocitos_campo || "1-3 p/c"}
+                                <div className="text-slate-900">
+                                  <span className="font-bold text-sky-800">EAS:</span>{" "}
+                                  VOL: {laudoGravado.volume || "60mL"} | D: {laudoGravado.densidade || "1.020"} | pH: {laudoGravado.ph || "6.0"} | Leu: {laudoGravado.leucocitos_campo || "4.000/mL"} | Hem: {laudoGravado.hemacias_campo || "1.000/mL"}
                                 </div>
-                                {(laudoGravado.resultado_pso || laudoGravado.resultado_vdrl || laudoGravado.tp_tempo) && (
-                                  <div className="text-[10px] text-slate-600">
+                                {(laudoGravado.resultado_abo_rh || laudoGravado.resultado_pso || laudoGravado.resultado_vdrl || laudoGravado.tp_tempo) && (
+                                  <div className="text-[10.5px] text-slate-600 font-medium">
                                     {[
+                                      laudoGravado.resultado_abo_rh ? `ABO/Rh: ${laudoGravado.resultado_abo_rh}` : null,
                                       laudoGravado.resultado_pso ? `PSO: ${laudoGravado.resultado_pso}` : null,
                                       laudoGravado.resultado_vdrl ? `VDRL: ${laudoGravado.resultado_vdrl}` : null,
                                       laudoGravado.resultado_beta_hcg ? `Beta: ${laudoGravado.resultado_beta_hcg}` : null,
-                                      laudoGravado.tp_tempo ? `TP: ${laudoGravado.tp_tempo} (${laudoGravado.tp_inr})` : null,
+                                      laudoGravado.tp_tempo ? `TP: ${laudoGravado.tp_tempo}` : null,
                                     ]
                                       .filter(Boolean)
                                       .join(" • ")}
@@ -798,8 +1212,28 @@ export default function BancadaPage() {
                                 )}
                               </div>
                             ) : (
-                              <span className="text-slate-400 italic">Aguardando análise na bancada</span>
+                              <span className="text-slate-400 italic text-[11px]">
+                                Aguardando lançamento na bancada
+                              </span>
                             )}
+                          </td>
+
+                          {/* Botão de Ação Direta */}
+                          <td className="py-3 px-3.5 text-right">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                selecionarPaciente(item);
+                                setModoTela("mobile");
+                              }}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ml-auto active:scale-95 cursor-pointer ${
+                                isConcluido
+                                  ? "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300"
+                                  : "bg-sky-700 hover:bg-sky-800 text-white shadow-xs"
+                              }`}
+                            >
+                              <span>{isConcluido ? "Editar ✎" : "Lançar no PC ➔"}</span>
+                            </button>
                           </td>
                         </tr>
                       );
@@ -809,9 +1243,43 @@ export default function BancadaPage() {
               </div>
             )}
           </div>
+
         </div>
       ) : (
-        /* MODO CELULAR: BANCADA OPERACIONAL COM LUVAS */
+        /* ============================================================== */
+        /* MODO CELULAR / DIGITAÇÃO DE BANCADA COM LUVAS                  */
+        /* ============================================================== */
+        <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-4 sm:pt-6">
+          {/* Banner de Retorno para o Painel Desktop */}
+          <div className="hidden md:flex items-center justify-between bg-slate-900 text-white px-5 py-3 rounded-2xl mb-4 shadow-md border border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold">
+                💻
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Modo Lançamento de Bancada</span>
+                  {pacienteInfo && (
+                    <span className="bg-sky-900/80 text-sky-300 font-mono text-[11px] px-2 py-0.5 rounded border border-sky-700">
+                      Pront: {pacienteInfo.prontuario} • {pacienteInfo.nome_paciente}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Preencha os exames com o teclado físico e clique em Salvar para atualizar a rotina.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setModoTela("desktop")}
+              className="px-4 py-2 bg-white/10 hover:bg-white/20 active:bg-white/30 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 border border-white/10 active:scale-95 cursor-pointer"
+            >
+              <Monitor className="w-4 h-4" />
+              <span>Voltar para o Painel & Impressão</span>
+            </button>
+          </div>
+/* MODO CELULAR: BANCADA OPERACIONAL COM LUVAS */
         <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-4 sm:pt-6">
         {/* SELEÇÃO RÁPIDA DE BANCADA (TABS DE TOQUE RÁPIDO) */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
@@ -2054,7 +2522,76 @@ export default function BancadaPage() {
         </div>
       )}
 
-            {/* ÁREA DE IMPRESSÃO (EXCLUSIVA PARA WINDOW.PRINT) */}
+            {/* MODAL DE PRÉ-VISUALIZAÇÃO DE IMPRESSÃO (TIRAGEM OU CANHOTOS) */}
+      {previewImpressao && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 print:hidden">
+          <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-300">
+            {/* Topbar do Modal */}
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Printer className="w-5 h-5 text-sky-400" />
+                <span className="font-bold text-sm">
+                  {previewImpressao === "triagem"
+                    ? "Pré-visualização: Folha de Tiragem da Bancada (Início do Plantão)"
+                    : "Pré-visualização: Canhotos de Resultados Finais (Recortáveis)"}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTipoImpressao(previewImpressao === "triagem" ? "triagem" : "resultados");
+                    setTimeout(() => window.print(), 100);
+                  }}
+                  className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-sm transition active:scale-95 cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  Imprimir Agora
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewImpressao(null)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Conteúdo Imprimível Renderizado na Tela */}
+            <div className="p-6 overflow-y-auto bg-slate-100 flex-1">
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                {previewImpressao === "triagem" ? (
+                  <MapaBancadaPrintView pacientes={rotinaDia} dataRotina={dataHoje} />
+                ) : (
+                  <RelatorioBancadaDiaPrintView
+                    laudos={
+                      laudosDia.length > 0
+                        ? laudosDia
+                        : rotinaDia.map((r) => ({
+                            prontuario: r.prontuario,
+                            nome_paciente: r.nome_paciente,
+                            idade_sexo: r.idade_sexo,
+                            posto_unidade: r.posto_unidade,
+                            solicitante: r.solicitante,
+                            data_hora: dataHoje || "2026-10-26",
+                            status: (r.tem_laudo ? "finalizado" : "rascunho") as StatusLaudo,
+                            observacoes: "",
+                            tem_abo_rh: r.tem_abo_rh,
+                            ...VALORES_PADRAO_NORMAL,
+                          }))
+                    }
+                    dataSelecionada={dataHoje}
+                    modo={modoRelatorio}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ÁREA DE IMPRESSÃO (EXCLUSIVA PARA WINDOW.PRINT) */}
       <div className="hidden print:block">
         {tipoImpressao === "triagem" ? (
           /* RELATÓRIO 1: TRIAGEM DO DIA (MAPA SIMPLES PARA BANCADA) */

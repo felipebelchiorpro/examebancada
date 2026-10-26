@@ -91,37 +91,31 @@ export function extractPrivateKey(rawKey?: string): string {
 }
 
 export function getGoogleSheetsCredentials() {
-  // 1. Suporte a JSON completo colado em uma unica variavel de ambiente
-  const jsonCandidates = [
+  // 1. Suporte universal a Service Account JSON (seja em Base64 ou JSON direto)
+  const allJsonCandidates = [
+    process.env.GOOGLE_CREDENTIALS_BASE64,
+    process.env.CREDENTIALS_BASE64,
     process.env.GOOGLE_CREDENTIALS,
     process.env.GOOGLE_SERVICE_ACCOUNT,
     process.env.GOOGLE_SERVICE_ACCOUNT_JSON,
     process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON,
     process.env.SERVICE_ACCOUNT_JSON,
     process.env.GOOGLE_SHEETS_CREDENTIALS,
+    process.env.CREDENTIALS,
   ];
 
   let clientEmail = "";
   let privateKey = "";
 
-    // Suporte direto a GOOGLE_CREDENTIALS_BASE64 configurado na Vercel
-  if (process.env.GOOGLE_CREDENTIALS_BASE64) {
-    try {
-      const decoded = Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64.trim(), "base64").toString("utf-8");
-      const parsed = JSON.parse(decoded);
-      if (parsed.client_email && parsed.private_key) {
-        clientEmail = parsed.client_email;
-        privateKey = extractPrivateKey(parsed.private_key);
-      }
-    } catch (b64Err) {
-      console.error("Erro ao decodificar GOOGLE_CREDENTIALS_BASE64:", b64Err);
-    }
-  }
+  for (const candidate of allJsonCandidates) {
+    if (!candidate) continue;
+    const trimmed = candidate.trim().replace(/^["']|["']$/g, "");
+    if (!trimmed) continue;
 
-  for (const candidate of jsonCandidates) {
-    if (candidate && candidate.trim().startsWith("{")) {
+    // A. Tenta como JSON direto
+    if (trimmed.startsWith("{")) {
       try {
-        const parsed = JSON.parse(candidate);
+        const parsed = JSON.parse(trimmed);
         if (parsed.client_email && parsed.private_key) {
           clientEmail = parsed.client_email;
           privateKey = extractPrivateKey(parsed.private_key);
@@ -129,13 +123,23 @@ export function getGoogleSheetsCredentials() {
         }
       } catch (_) {}
     }
+
+    // B. Tenta como Base64
+    try {
+      const decoded = Buffer.from(trimmed, "base64").toString("utf-8");
+      if (decoded.trim().startsWith("{")) {
+        const parsed = JSON.parse(decoded);
+        if (parsed.client_email && parsed.private_key) {
+          clientEmail = parsed.client_email;
+          privateKey = extractPrivateKey(parsed.private_key);
+          break;
+        }
+      }
+    } catch (_) {}
   }
 
-  // 2. Extrair email de servico por multiplos aliases comuns na Vercel
+  // 2. Extrair email de serviço por múltiplos aliases se ainda não encontrado
   if (!clientEmail) {
-    clientEmail = process.env.CLIENT_EMAIL || DEFAULT_CLIENT_EMAIL;
-  }
-  if (false) {
     clientEmail = (
       process.env.GOOGLE_SHEETS_CLIENT_EMAIL ||
       process.env.GOOGLE_CLIENT_EMAIL ||
@@ -143,11 +147,11 @@ export function getGoogleSheetsCredentials() {
       process.env.SERVICE_ACCOUNT_EMAIL ||
       process.env.CLIENT_EMAIL ||
       process.env.NEXT_PUBLIC_GOOGLE_CLIENT_EMAIL ||
-      ""
-    ).trim().replace(/^[\"']|[\"']$/g, "");
+      DEFAULT_CLIENT_EMAIL
+    ).trim().replace(/^["']|["']$/g, "");
   }
 
-  // 3. Extrair chave privada por multiplos aliases
+  // 3. Extrair chave privada por múltiplos aliases se ainda não encontrada
   if (!privateKey) {
     const rawKey =
       process.env.GOOGLE_SHEETS_PRIVATE_KEY ||
@@ -159,7 +163,7 @@ export function getGoogleSheetsCredentials() {
     privateKey = extractPrivateKey(rawKey);
   }
 
-  // 4. Extrair ID da planilha com sanitizacao de URL
+  // 4. Extrair ID da planilha com sanitização de URL
   const rawSheetId =
     process.env.GOOGLE_SHEETS_SHEET_ID ||
     process.env.NEXT_PUBLIC_BANCO_SHEET_ID ||
@@ -170,7 +174,6 @@ export function getGoogleSheetsCredentials() {
     process.env.NEXT_PUBLIC_SHEET_ID ||
     process.env.NEXT_PUBLIC_GOOGLE_SHEETS_SHEET_ID ||
     "";
-
   const sheetId = extractSpreadsheetId(rawSheetId) || DEFAULT_SHEET_ID;
 
   return { clientEmail, privateKey, sheetId };

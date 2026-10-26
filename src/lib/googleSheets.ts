@@ -613,53 +613,80 @@ export async function listarLaudos(
           const rowDate = normalizarDataIso((r[offset] || "").toString());
           if (dataFiltro && rowDate !== dataFiltro) continue;
 
+          const rawCor = (r[offset + 3] || "").toString().trim();
+          const rawAsp = (r[offset + 4] || "").toString().trim();
+          const rawDens = (r[offset + 5] || "").toString().trim();
+          const rawPh = (r[offset + 6] || "").toString().trim();
+
+          const resPso = (r[offset + 23] || "").toString().trim();
+          const resProt = (r[offset + 24] || "").toString().trim();
+          const resBeta = (r[offset + 25] || "").toString().trim();
+          const resVdrl = (r[offset + 26] || "").toString().trim();
+          const resVhs = (r[offset + 27] || "").toString().trim();
+          const resPcr = (r[offset + 28] || "").toString().trim();
+          const resTp = (r[offset + 29] || "").toString().trim();
+          const resTtpa = (r[offset + 30] || "").toString().trim();
+          const resAbo = (r[offset + 31] || "").toString().trim();
+          const resVol = (r[offset + 32] || "").toString().trim();
+          const resAslo = (r[offset + 33] || "").toString().trim();
+          const resFr = (r[offset + 34] || "").toString().trim();
+
+          const temOutroExame = Boolean(
+            resProt || resVdrl || resAbo || resPso || resBeta || resVhs || resPcr || resTp || resTtpa || resAslo || resFr
+          );
+
+          // Se tiver qualquer outro exame de bancada (VDRL, Proteinúria rápida, ABO/Rh, etc.)
+          // e os campos físicos da urina estiverem em branco na planilha, tem_urina é false.
+          const temUrina = !temOutroExame || (rawCor !== "" && rawAsp !== "");
+
           laudos.push({
             id: temId ? r[0] : `laudo-row-${i}`,
             data_hora: r[offset] || new Date().toISOString(),
             prontuario: formatarProntuario((r[offset + 1] || "").toString()),
             nome_paciente: (r[offset + 2] || "").toString(),
-            cor: r[offset + 3] || "Amarelo citrino",
-            aspecto: r[offset + 4] || "Límpido",
-            densidade: r[offset + 5] || "1.020",
-            ph: r[offset + 6] || "6.0",
-            proteina: r[offset + 7] || "Negativo",
-            glicose: r[offset + 8] || "Negativo",
-            cetona: r[offset + 9] || "Negativo",
-            bilirrubina: r[offset + 10] || "Negativo",
-            urobilinogenio: r[offset + 11] || "Normal",
-            sangue: r[offset + 12] || "Negativo",
-            nitrito: r[offset + 13] || "Negativo",
-            leucocitos_fita: r[offset + 14] || "Negativo",
-            celulas_epiteliais: r[offset + 15] || "4.000 /mL",
-            leucocitos_campo: r[offset + 16] || "4.000 /mL",
-            hemacias_campo: r[offset + 17] || "1.000 /mL",
-            bacterias: r[offset + 18] || "fb",
-            cristais: r[offset + 19] || "Ausentes",
-            cilindros: r[offset + 20] || "Ausentes",
+            tem_urina: temUrina,
+            cor: temUrina ? rawCor || "Amarelo ouro" : rawCor,
+            aspecto: temUrina ? rawAsp || "Límpido" : rawAsp,
+            densidade: temUrina ? rawDens || "1.020" : rawDens,
+            ph: temUrina ? rawPh || "6.0" : rawPh,
+            proteina: temUrina ? (r[offset + 7] || "Negativo").toString().trim() : (r[offset + 7] || "").toString().trim(),
+            glicose: temUrina ? (r[offset + 8] || "Negativo").toString().trim() : (r[offset + 8] || "").toString().trim(),
+            cetona: temUrina ? (r[offset + 9] || "Negativo").toString().trim() : (r[offset + 9] || "").toString().trim(),
+            bilirrubina: temUrina ? (r[offset + 10] || "Negativo").toString().trim() : (r[offset + 10] || "").toString().trim(),
+            urobilinogenio: temUrina ? (r[offset + 11] || "Normal").toString().trim() : (r[offset + 11] || "").toString().trim(),
+            sangue: temUrina ? (r[offset + 12] || "Negativo").toString().trim() : (r[offset + 12] || "").toString().trim(),
+            nitrito: temUrina ? (r[offset + 13] || "Negativo").toString().trim() : (r[offset + 13] || "").toString().trim(),
+            leucocitos_fita: temUrina ? (r[offset + 14] || "Negativo").toString().trim() : (r[offset + 14] || "").toString().trim(),
+            celulas_epiteliais: temUrina ? (r[offset + 15] || "4.000 /mL").toString().trim() : (r[offset + 15] || "").toString().trim(),
+            leucocitos_campo: temUrina ? (r[offset + 16] || "4.000 /mL").toString().trim() : (r[offset + 16] || "").toString().trim(),
+            hemacias_campo: temUrina ? (r[offset + 17] || "1.000 /mL").toString().trim() : (r[offset + 17] || "").toString().trim(),
+            bacterias: temUrina ? (r[offset + 18] || "fb").toString().trim() : (r[offset + 18] || "").toString().trim(),
+            cristais: temUrina ? (r[offset + 19] || "Ausentes").toString().trim() : (r[offset + 19] || "").toString().trim(),
+            cilindros: temUrina ? (r[offset + 20] || "Ausentes").toString().trim() : (r[offset + 20] || "").toString().trim(),
             observacoes: r[offset + 21] || "",
             status: (r[offset + 22] as StatusLaudo) || "finalizado",
-            resultado_pso: r[offset + 23] || undefined,
-            tem_pso: Boolean(r[offset + 23]),
-            resultado_proteinuria_rapida: r[offset + 24] || undefined,
-            tem_proteinuria_rapida: Boolean(r[offset + 24]),
-            resultado_beta_hcg: r[offset + 25] || undefined,
-            tem_beta_hcg: Boolean(r[offset + 25]),
-            resultado_vdrl: r[offset + 26] || undefined,
-            tem_vdrl: Boolean(r[offset + 26]),
-            resultado_vhs: r[offset + 27] || undefined,
-            tem_vhs: Boolean(r[offset + 27]),
-            resultado_pcr: r[offset + 28] || undefined,
-            tem_pcr: Boolean(r[offset + 28]),
-            tp_tempo: r[offset + 29] || undefined,
-            tem_coagulograma: Boolean(r[offset + 29] || r[offset + 30]),
-            ttpa_tempo: r[offset + 30] || undefined,
-            resultado_abo_rh: r[offset + 31] || undefined,
-            tem_abo_rh: Boolean(r[offset + 31]),
-            volume: r[offset + 32] || "60 mL",
-            resultado_aslo: r[offset + 33] || undefined,
-            tem_aslo: Boolean(r[offset + 33]),
-            resultado_fr: r[offset + 34] || undefined,
-            tem_fr: Boolean(r[offset + 34]),
+            resultado_pso: resPso || undefined,
+            tem_pso: Boolean(resPso),
+            resultado_proteinuria_rapida: resProt || undefined,
+            tem_proteinuria_rapida: Boolean(resProt),
+            resultado_beta_hcg: resBeta || undefined,
+            tem_beta_hcg: Boolean(resBeta),
+            resultado_vdrl: resVdrl || undefined,
+            tem_vdrl: Boolean(resVdrl),
+            resultado_vhs: resVhs || undefined,
+            tem_vhs: Boolean(resVhs),
+            resultado_pcr: resPcr || undefined,
+            tem_pcr: Boolean(resPcr),
+            tp_tempo: resTp || undefined,
+            tem_coagulograma: Boolean(resTp || resTtpa),
+            ttpa_tempo: resTtpa || undefined,
+            resultado_abo_rh: resAbo || undefined,
+            tem_abo_rh: Boolean(resAbo),
+            volume: temUrina ? resVol || "60 mL" : resVol,
+            resultado_aslo: resAslo || undefined,
+            tem_aslo: Boolean(resAslo),
+            resultado_fr: resFr || undefined,
+            tem_fr: Boolean(resFr),
           });
         }
         laudos = laudos.reverse();

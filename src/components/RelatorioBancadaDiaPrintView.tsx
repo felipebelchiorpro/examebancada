@@ -13,8 +13,12 @@ interface RelatorioBancadaDiaPrintViewProps {
 function pacienteTemUrina(l: LaudoUrina): boolean {
   if (l.tem_urina === false) return false;
   if (l.tem_urina === true) return true;
-  // Se o paciente tem algum outro exame específico e não teve urina solicitada explicitamente
-  if (
+
+  // Se o paciente tem qualquer exame de bancada rápida/sangue (Proteinúria, VDRL, ABO/Rh, PSO, etc.)
+  // e a Urina 1 não foi solicitada explicitamente
+  const temOutroExame = Boolean(
+    l.resultado_proteinuria_rapida ||
+    l.tem_proteinuria_rapida ||
     l.resultado_vdrl ||
     l.tem_vdrl ||
     l.resultado_abo_rh ||
@@ -22,10 +26,23 @@ function pacienteTemUrina(l: LaudoUrina): boolean {
     l.resultado_pso ||
     l.tem_pso ||
     l.tp_tempo ||
-    l.tem_coagulograma
-  ) {
+    l.tem_coagulograma ||
+    l.resultado_beta_hcg ||
+    l.tem_beta_hcg ||
+    l.resultado_vhs ||
+    l.tem_vhs ||
+    l.resultado_pcr ||
+    l.tem_pcr ||
+    l.resultado_aslo ||
+    l.tem_aslo ||
+    l.resultado_fr ||
+    l.tem_fr
+  );
+
+  if (temOutroExame) {
     return false;
   }
+
   return Boolean(l.cor || l.aspecto || l.densidade || l.ph);
 }
 
@@ -101,6 +118,8 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
             const hasProt = Boolean(l.tem_proteinuria_rapida || l.resultado_proteinuria_rapida);
             const hasVhs = Boolean(l.tem_vhs || l.resultado_vhs);
             const hasPcr = Boolean(l.tem_pcr || l.resultado_pcr);
+            const hasAslo = Boolean(l.tem_aslo || l.resultado_aslo);
+            const hasFr = Boolean(l.tem_fr || l.resultado_fr);
 
             return (
               <div
@@ -164,8 +183,14 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                     </div>
                   </div>
                 ) : (
-                  /* SE NÃO TIVER URINA (EX: ELIAS TEM SÓ VDRL): MOSTRA APENAS O EXAME DELE EM DESTAQUE */
+                  /* SE NÃO TIVER URINA (EX: ELIAS TEM SÓ VDRL, SEBASTIÃO TEM SÓ PROTEINÚRIA): MOSTRA APENAS O EXAME DELE EM DESTAQUE */
                   <div className="my-auto py-2 space-y-1.5 text-center">
+                    {hasProt && (
+                      <div className="p-2 border border-amber-400 bg-amber-50 rounded">
+                        <span className="text-[9px] font-black uppercase text-amber-950 block">Proteinúria (Teste Rápido)</span>
+                        <span className="text-xs font-black text-amber-900">{l.resultado_proteinuria_rapida || "Negativo"}</span>
+                      </div>
+                    )}
                     {hasVdrl && (
                       <div className="p-2 border border-purple-400 bg-purple-50 rounded">
                         <span className="text-[9px] font-black uppercase text-purple-950 block">VDRL (Sífilis)</span>
@@ -196,6 +221,30 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                       <div className="p-2 border border-pink-400 bg-pink-50 rounded">
                         <span className="text-[9px] font-black uppercase text-pink-950 block">Beta-HCG</span>
                         <span className="text-xs font-black text-pink-900">{l.resultado_beta_hcg || "Negativo"}</span>
+                      </div>
+                    )}
+                    {hasVhs && (
+                      <div className="p-2 border border-teal-400 bg-teal-50 rounded">
+                        <span className="text-[9px] font-black uppercase text-teal-950 block">VHS (1ª Hora)</span>
+                        <span className="text-xs font-black text-teal-900">{l.resultado_vhs || "10 mm/h"}</span>
+                      </div>
+                    )}
+                    {hasPcr && (
+                      <div className="p-2 border border-indigo-400 bg-indigo-50 rounded">
+                        <span className="text-[9px] font-black uppercase text-indigo-950 block">PCR</span>
+                        <span className="text-xs font-black text-indigo-900">{l.resultado_pcr || "Negativo"}</span>
+                      </div>
+                    )}
+                    {hasAslo && (
+                      <div className="p-2 border border-indigo-400 bg-indigo-50 rounded">
+                        <span className="text-[9px] font-black uppercase text-indigo-950 block">ASLO</span>
+                        <span className="text-xs font-black text-indigo-900">{l.resultado_aslo || "Negativo"}</span>
+                      </div>
+                    )}
+                    {hasFr && (
+                      <div className="p-2 border border-indigo-400 bg-indigo-50 rounded">
+                        <span className="text-[9px] font-black uppercase text-indigo-950 block">FR</span>
+                        <span className="text-xs font-black text-indigo-900">{l.resultado_fr || "Negativo"}</span>
                       </div>
                     )}
                   </div>

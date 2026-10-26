@@ -101,11 +101,14 @@ export function classificarExameBancada(
     };
   }
 
-  // 1. TESTE RÁPIDO DE PROTEINÚRIA (Gestantes / Pré-Natal)
+  // 1. TESTE RÁPIDO DE PROTEINÚRIA (Gestantes / Pré-Natal / Fita)
   if (
     combinado.includes("TESTE RAPIDO DE PROTEINURIA") ||
     combinado.includes("PROTEINURIA - TESTE RAPIDO") ||
-    combinado.includes("PROTEINURIA TESTE RAPIDO")
+    combinado.includes("PROTEINURIA TESTE RAPIDO") ||
+    combinado.includes("PROTEINURIA") ||
+    combinado.includes("PROTEINA NA URINA") ||
+    combinado.includes("PROTEINAS NA URINA")
   ) {
     return {
       ehBancada: true,
@@ -272,10 +275,10 @@ export function classificarExameBancada(
  * salva no Google Sheets ou em memória.
  */
 export function aplicarFlagsExamesNoItem(item: ItemRotina): ItemRotina {
-  const partes = (item.exame || "URINA I")
-    .split(/\s*\+\s*|\s*,\s*|\s*;\s*/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const exameTexto = (item.exame || "").trim();
+  const partes = exameTexto
+    ? exameTexto.split(/\s*\+\s*|\s*,\s*|\s*;\s*/).map((s) => s.trim()).filter(Boolean)
+    : [];
 
   let tem_urina = Boolean(item.tem_urina);
   let tem_pso = Boolean(item.tem_pso);
@@ -302,6 +305,23 @@ export function aplicarFlagsExamesNoItem(item: ItemRotina): ItemRotina {
     if (c.categoria === "aslo") tem_aslo = true;
     if (c.categoria === "fr") tem_fr = true;
     if (c.categoria === "abo_rh") tem_abo_rh = true;
+  }
+
+  // Se nenhum exame foi identificado explicitamente e nem tinha flags prévias, aí sim assume URINA I
+  const temAlgumOutro =
+    tem_pso ||
+    tem_coagulograma ||
+    tem_vdrl ||
+    tem_beta_hcg ||
+    tem_vhs ||
+    tem_pcr ||
+    tem_aslo ||
+    tem_fr ||
+    tem_proteinuria_rapida ||
+    tem_abo_rh;
+
+  if (!tem_urina && !temAlgumOutro && !exameTexto) {
+    tem_urina = true;
   }
 
   return {

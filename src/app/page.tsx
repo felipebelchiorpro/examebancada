@@ -537,8 +537,7 @@ export default function BancadaOperacionalPage() {
       return imunoPacientes;
     }
     // Bancada de Urina I: somente quem tem Urina I solicitada, na exata ordem 1, 2, 3, 4, 5, 6 da Tiragem!
-    const apenasUrina = ordenada.filter((p) => Boolean(p.tem_urina));
-    return apenasUrina.length > 0 ? apenasUrina : ordenada;
+    return ordenada.filter((p) => Boolean(p.tem_urina));
   }, [rotinaDia, bancadaAtiva, subFiltroImuno]);
 
   // Selecionar automaticamente o primeiro tubo pendente quando a fila da bancada mudar no celular
@@ -2833,7 +2832,7 @@ export default function BancadaOperacionalPage() {
                             data_hora: dataHoje || "2026-10-26",
                             status: (r.tem_laudo ? "finalizado" : "rascunho") as StatusLaudo,
                             observacoes: "",
-                            tem_urina: r.tem_urina,
+                            tem_urina: Boolean(r.tem_urina),
                             tem_vdrl: r.tem_vdrl,
                             resultado_vdrl: r.tem_vdrl ? "Não Reagente" : undefined,
                             tem_abo_rh: r.tem_abo_rh,
@@ -2849,7 +2848,7 @@ export default function BancadaOperacionalPage() {
                             resultado_proteinuria_rapida: r.tem_proteinuria_rapida ? "Negativo" : undefined,
                             tem_vhs: r.tem_vhs,
                             resultado_vhs: r.tem_vhs ? "10 mm/h" : undefined,
-                            ...(r.tem_urina === false ? VALORES_SEM_URINA : VALORES_PADRAO_NORMAL),
+                            ...(r.tem_urina ? VALORES_PADRAO_NORMAL : VALORES_SEM_URINA),
                           }))
                     }
                     dataSelecionada={dataHoje}
@@ -2884,7 +2883,7 @@ export default function BancadaOperacionalPage() {
                     data_hora: dataHoje || "2026-10-26",
                     status: (r.tem_laudo ? "finalizado" : "rascunho") as StatusLaudo,
                     observacoes: "",
-                    tem_urina: r.tem_urina,
+                    tem_urina: Boolean(r.tem_urina),
                     tem_vdrl: r.tem_vdrl,
                     resultado_vdrl: r.tem_vdrl ? "Não Reagente" : undefined,
                     tem_abo_rh: r.tem_abo_rh,
@@ -2900,7 +2899,7 @@ export default function BancadaOperacionalPage() {
                     resultado_proteinuria_rapida: r.tem_proteinuria_rapida ? "Negativo" : undefined,
                     tem_vhs: r.tem_vhs,
                     resultado_vhs: r.tem_vhs ? "10 mm/h" : undefined,
-                    ...(r.tem_urina === false ? VALORES_SEM_URINA : VALORES_PADRAO_NORMAL),
+                    ...(r.tem_urina ? VALORES_PADRAO_NORMAL : VALORES_SEM_URINA),
                   }))
             }
             dataSelecionada={dataHoje}

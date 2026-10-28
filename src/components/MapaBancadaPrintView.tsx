@@ -28,15 +28,34 @@ export const MapaBancadaPrintView: React.FC<MapaBancadaPrintViewProps> = ({
     ? dataRotina.split("-").reverse().join("/")
     : new Date().toLocaleDateString("pt-BR");
 
+  // Filtrar pacientes e laudos rigorosamente pela data caso dataRotina esteja preenchida
+  const pacientesFiltrados = React.useMemo(() => {
+    if (!dataRotina) return pacientes;
+    const alvo = dataRotina.trim();
+    const filtrados = pacientes.filter((p) => {
+      const d = (p.data || p.data_rotina || "").split("T")[0];
+      return !d || d === alvo;
+    });
+    return filtrados.length > 0 ? filtrados : pacientes;
+  }, [pacientes, dataRotina]);
+
   // Mapa rápido de laudos por prontuário para preencher a coluna Resultado caso já tenha sido contado no celular
   const mapaLaudos = new Map<string, LaudoUrina>();
   laudos.forEach((l) => {
-    mapaLaudos.set(formatarProntuario(l.prontuario), l);
+    const d = (l.data_hora || "").split("T")[0];
+    if (!dataRotina || !d || d === dataRotina) {
+      mapaLaudos.set(formatarProntuario(l.prontuario), l);
+    }
   });
 
   const obterResumoResultado = (prontuario: string, exameUpper: string): string => {
     const l = mapaLaudos.get(formatarProntuario(prontuario));
     if (!l) return "";
+
+    // SE O LAUDO FOR MARCADO COMO RECOLETA, EXIBE O ALERTA CLARO
+    if (l.status === "recoleta") {
+      return `⚠️ RECOLETA SOLICITADA (${l.observacoes || "Amostra inadequada"})`;
+    }
 
     if (exameUpper.includes("PROTEINÚRIA") || exameUpper.includes("PROTEINURIA")) {
       return l.resultado_proteinuria_rapida || l.proteina || "";
@@ -45,9 +64,17 @@ export const MapaBancadaPrintView: React.FC<MapaBancadaPrintViewProps> = ({
       return `VOL:${l.volume || "60mL"} D:${l.densidade} pH:${l.ph} Leu:${l.leucocitos_campo} Hem:${l.hemacias_campo}`;
     }
     if (exameUpper.includes("SANGUE OCULTO") || exameUpper.includes("PSO")) {
+      if (l.resultado_pso && l.resultado_pso.toLowerCase().includes("recoleta")) {
+        return `⚠️ RECOLETA: ${l.resultado_pso}`;
+      }
       return l.resultado_pso || "";
     }
-    if (exameUpper.includes("ABO") || exameUpper.includes("FATOR RH") || exameUpper.includes("GRUPO SANGU")) {
+    if (
+      /\bABO\b/.test(exameUpper) ||
+      exameUpper.includes("FATOR RH") ||
+      exameUpper.includes("GRUPO SANGU") ||
+      exameUpper.includes("TIPAGEM")
+    ) {
       return l.resultado_abo_rh || "";
     }
     if (exameUpper.includes("COAGULOGRAMA") || exameUpper.includes("PROTROMBINA") || exameUpper.includes("TAP")) {
@@ -71,7 +98,7 @@ export const MapaBancadaPrintView: React.FC<MapaBancadaPrintViewProps> = ({
   // Expandir os pacientes nas linhas exatas de cada exame (padrão "Bancada 15/10")
   const linhasBrutas: Omit<LinhaBancadaIndividual, "numeroNoGrupo">[] = [];
 
-  pacientes.forEach((p) => {
+  pacientesFiltrados.forEach((p) => {
     const listaExames = (p.exame || "URINA I")
       .split(/\s*\+\s*|\s*,\s*|\s*;\s*/)
       .map((s) => s.trim())
@@ -141,7 +168,7 @@ export const MapaBancadaPrintView: React.FC<MapaBancadaPrintViewProps> = ({
         <div className="text-right text-xs font-bold">
           <span>Total de Exames: {itensPorExame.length}</span>
           <span className="block text-[10px] font-normal text-neutral-600">
-            Pacientes: {pacientes.length}
+            Pacientes: {pacientesFiltrados.length}
           </span>
         </div>
       </div>

@@ -81,7 +81,8 @@ export function classificarExameBancada(
   const ex = normalizarTexto(exameRaw);
   const combinado = `${proc} | ${ex}`;
 
-  // 0. Descarte imediato de exames externos ou bioquímicos que mencionam "URINA" (ex: Microalbumina na urina -> ALBUMINA)
+  // 0. Descarte imediato de exames externos ou bioquímicos/hematológicos automatizados
+  // (evita que Hemograma, Hemoglobina Glicada, Ureia, Creatinina, etc., sejam confundidos com bancada)
   if (
     combinado.includes("MICROALBUMINA") ||
     ex === "ALBUMINA" ||
@@ -92,7 +93,33 @@ export function classificarExameBancada(
     combinado.includes("SAO JOAO DA B VISTA") ||
     combinado.includes("ANTI-HIV") ||
     combinado.includes("ANTI-HCV") ||
-    combinado.includes("HBSAG")
+    combinado.includes("HBSAG") ||
+    combinado.includes("HEMOGRAMA") ||
+    combinado.includes("GLICADA") ||
+    combinado.includes("HBA1C") ||
+    combinado.includes("ERITROGRAMA") ||
+    combinado.includes("LEUCOGRAMA") ||
+    combinado.includes("PLAQUETAS") ||
+    combinado.includes("GLICOSE") ||
+    combinado.includes("GLICEMIA") ||
+    combinado.includes("COLESTEROL") ||
+    combinado.includes("TRIGLICER") ||
+    combinado.includes("LIPIDOGRAMA") ||
+    combinado.includes("UREIA") ||
+    combinado.includes("CREATININA") ||
+    combinado.includes("ACIDO URICO") ||
+    combinado.includes("TRANSAMINASE") ||
+    combinado.includes("TGO") ||
+    combinado.includes("TGP") ||
+    combinado.includes("GAMA GT") ||
+    combinado.includes("FOSFATASE ALCALINA") ||
+    combinado.includes("TSH") ||
+    combinado.includes("T4 LIVRE") ||
+    combinado.includes("FERRITINA") ||
+    combinado.includes("ELETROFORESE") ||
+    combinado.includes("TROPONINA") ||
+    combinado.includes("CK-MB") ||
+    combinado.includes("CPK")
   ) {
     return {
       ehBancada: false,
@@ -221,13 +248,22 @@ export function classificarExameBancada(
   }
 
   // 9. TIPAGEM SANGUÍNEA ABO / FATOR RH
-  if (
-    combinado.includes("ABO") ||
+  // CRÍTICO: NUNCA usar combinado.includes("ABO") solto, pois casa com "LABORATÓRIO", "METABÓLICO", etc.!
+  const ehAboRh =
     combinado.includes("FATOR RH") ||
     combinado.includes("GRUPO SANGUINEO") ||
     combinado.includes("TIPAGEM SANGUINEA") ||
-    combinado.includes("FENOTIPAGEM")
-  ) {
+    combinado.includes("SISTEMA ABO") ||
+    combinado.includes("FENOTIPAGEM") ||
+    /\bABO\s*[\/-]?\s*RH\b/.test(combinado) ||
+    (/\bABO\b/.test(combinado) &&
+      (combinado.includes("SANGU") ||
+        combinado.includes("GRUPO") ||
+        combinado.includes("TIPAGEM") ||
+        combinado.includes("RH") ||
+        combinado.includes("AGLUTINACAO")));
+
+  if (ehAboRh) {
     return {
       ehBancada: true,
       nomeExamePadronizado: "GRUPO SANGUÍNEO ABO E FATOR RH",
@@ -481,13 +517,16 @@ export function processarMatrizLinhasBancada(
       }
     }
 
-    // Extrair data de referência (DD/MM/YYYY -> YYYY-MM-DD)
+    // Extrair data da linha atual (DD/MM/YYYY -> YYYY-MM-DD)
+    let dataLinha = dataReferencia;
     if (dataRaw) {
       const matchData = dataRaw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
       if (matchData) {
-        dataReferencia = `${matchData[3]}-${matchData[2]}-${matchData[1]}`;
+        dataLinha = `${matchData[3]}-${matchData[2]}-${matchData[1]}`;
+        dataReferencia = dataLinha;
       } else if (/^\d{4}-\d{2}-\d{2}/.test(dataRaw)) {
-        dataReferencia = dataRaw.substring(0, 10);
+        dataLinha = dataRaw.substring(0, 10);
+        dataReferencia = dataLinha;
       }
     }
 
@@ -528,9 +567,9 @@ export function processarMatrizLinhasBancada(
     if (!mapaPacientes.has(chavePaciente)) {
       mapaPacientes.set(chavePaciente, {
         item: {
-          id: `rot-${dataReferencia}-${prontuarioFinal}`,
-          data: dataReferencia,
-          data_rotina: dataReferencia,
+          id: `rot-${dataLinha}-${prontuarioFinal}`,
+          data: dataLinha,
+          data_rotina: dataLinha,
           status_coleta: "REALIZADO",
           prontuario: prontuarioFinal,
           nome_paciente: nomePacienteLimpo,

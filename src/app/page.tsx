@@ -26,6 +26,7 @@ import {
   RefreshCw,
   X,
   Eye,
+  Calendar,
 } from "lucide-react";
 
 const VALORES_PADRAO_NORMAL = {
@@ -95,7 +96,7 @@ export default function BancadaOperacionalPage() {
 
   // Filtros da Tabela no Painel Desktop
   const [filtroTexto, setFiltroTexto] = useState<string>("");
-  const [filtroStatus, setFiltroStatus] = useState<"todos" | "pendentes" | "concluidos">("todos");
+  const [filtroStatus, setFiltroStatus] = useState<"todos" | "pendentes" | "rascunho" | "recoleta" | "concluidos">("todos");
   const [filtroTipoExame, setFiltroTipoExame] = useState<string>("todos");
 
   // Estado de Busca e Identificação do Paciente (Mobile)
@@ -218,12 +219,13 @@ export default function BancadaOperacionalPage() {
     return () => clearInterval(timer);
   }, []);
 
-  const carregarDadosSincronizados = async (silencioso = false) => {
+  const carregarDadosSincronizados = async (silencioso = false, dataFiltro?: string) => {
     if (!silencioso) setIsSyncing(true);
     try {
+      const dataAlvo = dataFiltro || dataHoje || new Date().toISOString().split("T")[0];
       const [resRotina, resLaudos] = await Promise.all([
-        fetch("/api/rotina", { cache: "no-store" }),
-        fetch("/api/laudos", { cache: "no-store" }),
+        fetch(`/api/rotina?data=${dataAlvo}`, { cache: "no-store" }),
+        fetch(`/api/laudos?data=${dataAlvo}`, { cache: "no-store" }),
       ]);
       const dataRotina = await resRotina.json();
       const dataLaudos = await resLaudos.json();
@@ -235,17 +237,25 @@ export default function BancadaOperacionalPage() {
       }
 
       if (dataRotina.ok && Array.isArray(dataRotina.rotina)) {
-        const prontuariosComLaudo = new Set(
-          laudosAtuais.map((l) => formatarProntuario(l.prontuario))
-        );
+        const mapaLaudos = new Map<string, LaudoUrina>();
+        laudosAtuais.forEach((l) => {
+          mapaLaudos.set(formatarProntuario(l.prontuario), l);
+        });
+
         const rotinaAtualizada: ItemRotina[] = dataRotina.rotina
-          .map((item: ItemRotina) => ({
-            ...item,
-            prontuario: formatarProntuario(item.prontuario),
-            tem_laudo: Boolean(
-              item.tem_laudo || prontuariosComLaudo.has(formatarProntuario(item.prontuario))
-            ),
-          }))
+          .map((item: ItemRotina) => {
+            const pront = formatarProntuario(item.prontuario);
+            const laudoGravado = mapaLaudos.get(pront);
+            const statusReal = laudoGravado?.status || item.status_laudo;
+            const ehFinalizado = statusReal === "finalizado";
+
+            return {
+              ...item,
+              prontuario: pront,
+              tem_laudo: ehFinalizado,
+              status_laudo: statusReal || (item.tem_laudo ? "finalizado" : "rascunho"),
+            };
+          })
           .sort((a: ItemRotina, b: ItemRotina) =>
             a.nome_paciente.localeCompare(b.nome_paciente, "pt-BR")
           );
@@ -731,13 +741,13 @@ export default function BancadaOperacionalPage() {
         setRotinaDia((prev) =>
           prev.map((r) =>
             formatarProntuario(r.prontuario) === prontuarioFinal
-              ? { ...r, tem_laudo: true }
+              ? { ...r, tem_laudo: status === "finalizado", status_laudo: status }
               : r
           )
         );
 
         // Recarregar os dados do servidor em segundo plano para manter 100% sincronizado
-        carregarDadosSincronizados(false);
+        carregarDadosSincronizados(true);
 
         const msgStatus =
           status === "finalizado"
@@ -779,9 +789,85 @@ export default function BancadaOperacionalPage() {
     }));
   };
 
+  // Pacientes e Laudos estritamente filtrados pela data da rotina selecionada (evita misturar pacientes de outros dias)
+  const laudosDoDia = React.useMemo(() => {
+    if (!dataHoje) return laudosDia;
+    const alvo = dataHoje.trim();
+    const filtrados = laudosDia.filter((l) => (l.data_hora || "").split("T")[0] === alvo);
+    return filtrados.length > 0 ? filtrados : laudosDia;
+  }, [laudosDia, dataHoje]);
+
+  const rotinaDoDia = React.useMemo(() => {
+    if (!dataHoje) return rotinaDia;
+    const alvo = dataHoje.trim();
+    const filtrados = rotinaDia.filter((r) => {
+      const d = (r.data || r.data_rotina || "").split("T")[0];
+      return !d || d === alvo;
+    });
+    return filtrados.length > 0 ? filtrados : rotinaDia;
+  }, [rotinaDia, dataHoje]);
+
+  // Monta a relação oficial e completa de laudos para o Relatório do Dia / Canhotos recortáveis
+  const laudosParaRelatorio = React.useMemo(() => {
+    const mapaLaudosHoje = new Map<string, LaudoUrina>();
+    laudosDoDia.forEach((l) => {
+      mapaLaudosHoje.set(formatarProntuario(l.prontuario), l);
+    });
+
+    const lista: LaudoUrina[] = [];
+    const prontuariosProcessados = new Set<string>();
+
+    rotinaDoDia.forEach((r) => {
+      const pront = formatarProntuario(r.prontuario);
+      prontuariosProcessados.add(pront);
+      const laudoExistente = mapaLaudosHoje.get(pront);
+
+      if (laudoExistente) {
+        lista.push(laudoExistente);
+      } else {
+        lista.push({
+          prontuario: r.prontuario,
+          nome_paciente: r.nome_paciente,
+          idade_sexo: r.idade_sexo,
+          posto_unidade: r.posto_unidade,
+          solicitante: r.solicitante,
+          data_hora: dataHoje || new Date().toISOString().split("T")[0],
+          status: (r.status_laudo || (r.tem_laudo ? "finalizado" : "rascunho")) as StatusLaudo,
+          observacoes: "",
+          tem_urina: Boolean(r.tem_urina),
+          tem_vdrl: r.tem_vdrl,
+          resultado_vdrl: r.tem_vdrl ? "Não Reagente" : undefined,
+          tem_abo_rh: r.tem_abo_rh,
+          resultado_abo_rh: r.tem_abo_rh ? "O Positivo (+)" : undefined,
+          tem_pso: r.tem_pso,
+          resultado_pso: r.tem_pso ? "Negativo" : undefined,
+          tem_coagulograma: r.tem_coagulograma,
+          tp_tempo: r.tem_coagulograma ? "12.5s" : undefined,
+          tp_inr: r.tem_coagulograma ? "1.00" : undefined,
+          tem_beta_hcg: r.tem_beta_hcg,
+          resultado_beta_hcg: r.tem_beta_hcg ? "Negativo" : undefined,
+          tem_proteinuria_rapida: r.tem_proteinuria_rapida,
+          resultado_proteinuria_rapida: r.tem_proteinuria_rapida ? "Negativo" : undefined,
+          tem_vhs: r.tem_vhs,
+          resultado_vhs: r.tem_vhs ? "10 mm/h" : undefined,
+          ...(r.tem_urina ? VALORES_PADRAO_NORMAL : VALORES_SEM_URINA),
+        });
+      }
+    });
+
+    laudosDoDia.forEach((l) => {
+      const pront = formatarProntuario(l.prontuario);
+      if (!prontuariosProcessados.has(pront)) {
+        lista.push(l);
+      }
+    });
+
+    return lista.sort((a, b) => a.nome_paciente.localeCompare(b.nome_paciente, "pt-BR"));
+  }, [rotinaDoDia, laudosDoDia, dataHoje]);
+
   // Filtros e estatísticas do painel Desktop
   const rotinaFiltradaDesktop = React.useMemo(() => {
-    return rotinaDia.filter((item) => {
+    return rotinaDoDia.filter((item) => {
       const q = filtroTexto.trim().toLowerCase();
       const matchTexto =
         !q ||
@@ -789,15 +875,21 @@ export default function BancadaOperacionalPage() {
         item.prontuario.toLowerCase().includes(q) ||
         (item.exame && item.exame.toLowerCase().includes(q));
 
-      const laudoGravado = laudosDia.find(
+      const laudoGravado = laudosDoDia.find(
         (l) => formatarProntuario(l.prontuario) === formatarProntuario(item.prontuario)
       );
-      const concluido = Boolean(item.tem_laudo || laudoGravado);
+      const statusTubo = laudoGravado?.status || item.status_laudo || (item.tem_laudo ? "finalizado" : "pendente");
+      const ehConcluido = statusTubo === "finalizado";
+      const ehRascunho = statusTubo === "rascunho";
+      const ehRecoleta = statusTubo === "recoleta";
+      const ehPendente = statusTubo === "pendente";
 
       const matchStatus =
         filtroStatus === "todos" ||
-        (filtroStatus === "concluidos" && concluido) ||
-        (filtroStatus === "pendentes" && !concluido);
+        (filtroStatus === "concluidos" && ehConcluido) ||
+        (filtroStatus === "rascunho" && ehRascunho) ||
+        (filtroStatus === "recoleta" && ehRecoleta) ||
+        (filtroStatus === "pendentes" && ehPendente);
 
       const matchExame =
         filtroTipoExame === "todos" ||
@@ -816,26 +908,39 @@ export default function BancadaOperacionalPage() {
 
       return matchTexto && matchStatus && matchExame;
     });
-  }, [rotinaDia, laudosDia, filtroTexto, filtroStatus, filtroTipoExame]);
+  }, [rotinaDoDia, laudosDoDia, filtroTexto, filtroStatus, filtroTipoExame]);
 
   const totalExamesContagem = React.useMemo(() => {
-    return rotinaDia.reduce((acc, p) => {
+    return rotinaDoDia.reduce((acc, p) => {
       const qtd = (p.exame || "URINA I").split(/\s*\+\s*|\s*,\s*|\s*;\s*/).filter(Boolean).length;
       return acc + Math.max(1, qtd);
     }, 0);
-  }, [rotinaDia]);
+  }, [rotinaDoDia]);
 
-  const concluidosCount = rotinaDia.filter(
-    (r) =>
-      r.tem_laudo ||
-      laudosDia.some((l) => formatarProntuario(l.prontuario) === formatarProntuario(r.prontuario))
-  ).length;
-  const pendentesCount = Math.max(0, rotinaDia.length - concluidosCount);
+  const concluidosCount = rotinaDoDia.filter((r) => {
+    const l = laudosDoDia.find((x) => formatarProntuario(x.prontuario) === formatarProntuario(r.prontuario));
+    return l ? l.status === "finalizado" : r.status_laudo === "finalizado" || r.tem_laudo;
+  }).length;
+
+  const rascunhosCount = rotinaDoDia.filter((r) => {
+    const l = laudosDoDia.find((x) => formatarProntuario(x.prontuario) === formatarProntuario(r.prontuario));
+    return l ? l.status === "rascunho" : r.status_laudo === "rascunho";
+  }).length;
+
+  const recoletasCount = rotinaDoDia.filter((r) => {
+    const l = laudosDoDia.find((x) => formatarProntuario(x.prontuario) === formatarProntuario(r.prontuario));
+    return l ? l.status === "recoleta" : r.status_laudo === "recoleta";
+  }).length;
+
+  const pendentesCount = Math.max(
+    0,
+    rotinaDoDia.length - concluidosCount - rascunhosCount - recoletasCount
+  );
 
   const contagensBancadas = React.useMemo(() => {
     return {
-      urina: rotinaDia.filter((p) => Boolean(p.tem_urina)).length,
-      imuno: rotinaDia.filter((p) =>
+      urina: rotinaDoDia.filter((p) => Boolean(p.tem_urina)).length,
+      imuno: rotinaDoDia.filter((p) =>
         Boolean(
           p.tem_vdrl ||
             p.tem_beta_hcg ||
@@ -847,16 +952,16 @@ export default function BancadaOperacionalPage() {
             p.tem_abo_rh
         )
       ).length,
-      coag: rotinaDia.filter((p) => Boolean(p.tem_coagulograma)).length,
-      pso: rotinaDia.filter((p) => Boolean(p.tem_pso)).length,
-      vdrl: rotinaDia.filter((p) => Boolean(p.tem_vdrl)).length,
-      abo: rotinaDia.filter((p) => Boolean(p.tem_abo_rh)).length,
-      proteinuria: rotinaDia.filter((p) => Boolean(p.tem_proteinuria_rapida)).length,
-      beta_hcg: rotinaDia.filter((p) => Boolean(p.tem_beta_hcg)).length,
-      provas: rotinaDia.filter((p) => Boolean(p.tem_pcr || p.tem_aslo || p.tem_fr)).length,
-      vhs: rotinaDia.filter((p) => Boolean(p.tem_vhs)).length,
+      coag: rotinaDoDia.filter((p) => Boolean(p.tem_coagulograma)).length,
+      pso: rotinaDoDia.filter((p) => Boolean(p.tem_pso)).length,
+      vdrl: rotinaDoDia.filter((p) => Boolean(p.tem_vdrl)).length,
+      abo: rotinaDoDia.filter((p) => Boolean(p.tem_abo_rh)).length,
+      proteinuria: rotinaDoDia.filter((p) => Boolean(p.tem_proteinuria_rapida)).length,
+      beta_hcg: rotinaDoDia.filter((p) => Boolean(p.tem_beta_hcg)).length,
+      provas: rotinaDoDia.filter((p) => Boolean(p.tem_pcr || p.tem_aslo || p.tem_fr)).length,
+      vhs: rotinaDoDia.filter((p) => Boolean(p.tem_vhs)).length,
     };
-  }, [rotinaDia]);
+  }, [rotinaDoDia]);
 
   return (
     <div className="min-h-screen bg-slate-100/80 pb-28 md:pb-12">
@@ -912,7 +1017,52 @@ export default function BancadaOperacionalPage() {
                 <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
                   Suba o arquivo bruto de coletas do <b>Conecta SUS</b>. O sistema descarta automaticamente os bioquímicos, unifica os exames de bancada no formato oficial da <b>Tiragem do Dia</b> (com a Urina 1, 2, 3, 4, 5, 6... em ordem alfabética) e envia a mesma fila para o <b>celular</b> realizar as contagens.
                 </p>
-                <div className="pt-1 flex items-center gap-3">
+                <div className="pt-2 flex flex-wrap items-center gap-2.5">
+                  <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 p-1 rounded-xl text-xs">
+                    <Calendar className="w-3.5 h-3.5 text-slate-500 ml-1.5" />
+                    <span className="font-black text-slate-700">Data da Rotina:</span>
+                    <input
+                      type="date"
+                      value={dataHoje}
+                      onChange={(e) => {
+                        const nova = e.target.value;
+                        setDataHoje(nova);
+                        carregarDadosSincronizados(false, nova);
+                      }}
+                      className="bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const h = new Date().toISOString().split("T")[0];
+                        setDataHoje(h);
+                        carregarDadosSincronizados(false, h);
+                      }}
+                      className={`px-2 py-1 rounded-lg text-[11px] font-black transition ${
+                        dataHoje === new Date().toISOString().split("T")[0]
+                          ? "bg-sky-700 text-white shadow-2xs"
+                          : "bg-white hover:bg-slate-200 text-slate-700 border border-slate-200"
+                      }`}
+                    >
+                      Hoje
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const o = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+                        setDataHoje(o);
+                        carregarDadosSincronizados(false, o);
+                      }}
+                      className={`px-2 py-1 rounded-lg text-[11px] font-black transition ${
+                        dataHoje === new Date(Date.now() - 86400000).toISOString().split("T")[0]
+                          ? "bg-sky-700 text-white shadow-2xs"
+                          : "bg-white hover:bg-slate-200 text-slate-700 border border-slate-200"
+                      }`}
+                    >
+                      Ontem
+                    </button>
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => carregarDadosSincronizados(false)}
@@ -920,11 +1070,8 @@ export default function BancadaOperacionalPage() {
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin text-sky-600" : ""}`} />
-                    <span>{isSyncing ? "Sincronizando com o Celular..." : "Sincronizar Agora"}</span>
+                    <span>{isSyncing ? "Sincronizando..." : "Atualizar"}</span>
                   </button>
-                  <span className="text-[11px] text-slate-400 font-medium">
-                    Atualização automática a cada 8s
-                  </span>
                 </div>
               </div>
 
@@ -1150,34 +1297,56 @@ export default function BancadaOperacionalPage() {
                   </p>
                 </div>
 
-                {/* Filtro Status (Todos / Pendentes / Concluídos) */}
-                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+                {/* Filtro Status (Todos / Pendentes / Rascunhos / Recoletas / Concluídos) */}
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold overflow-x-auto">
                   <button
                     type="button"
                     onClick={() => setFiltroStatus("todos")}
-                    className={`px-3 py-1.5 rounded-lg transition ${
+                    className={`px-3 py-1.5 rounded-lg transition shrink-0 ${
                       filtroStatus === "todos"
                         ? "bg-white text-slate-900 shadow-xs font-black"
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
-                    Todos ({rotinaDia.length})
+                    Todos ({rotinaDoDia.length})
                   </button>
                   <button
                     type="button"
                     onClick={() => setFiltroStatus("pendentes")}
-                    className={`px-3 py-1.5 rounded-lg transition ${
+                    className={`px-3 py-1.5 rounded-lg transition shrink-0 ${
                       filtroStatus === "pendentes"
+                        ? "bg-slate-800 text-white shadow-xs font-black"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Pendentes ({pendentesCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFiltroStatus("rascunho")}
+                    className={`px-3 py-1.5 rounded-lg transition shrink-0 ${
+                      filtroStatus === "rascunho"
                         ? "bg-amber-500 text-white shadow-xs font-black"
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
-                    Aguardando Celular ({pendentesCount})
+                    Rascunho / Fita ({rascunhosCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFiltroStatus("recoleta")}
+                    className={`px-3 py-1.5 rounded-lg transition shrink-0 ${
+                      filtroStatus === "recoleta"
+                        ? "bg-rose-600 text-white shadow-xs font-black"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Recoletas ({recoletasCount})
                   </button>
                   <button
                     type="button"
                     onClick={() => setFiltroStatus("concluidos")}
-                    className={`px-3 py-1.5 rounded-lg transition ${
+                    className={`px-3 py-1.5 rounded-lg transition shrink-0 ${
                       filtroStatus === "concluidos"
                         ? "bg-emerald-600 text-white shadow-xs font-black"
                         : "text-slate-600 hover:text-slate-900"
@@ -1267,15 +1436,28 @@ export default function BancadaOperacionalPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {rotinaFiltradaDesktop.map((item, idx) => {
-                      const laudoGravado = laudosDia.find(
+                      const laudoGravado = laudosDoDia.find(
                         (l) =>
                           formatarProntuario(l.prontuario) === formatarProntuario(item.prontuario)
                       );
-                      const isConcluido = item.tem_laudo || Boolean(laudoGravado);
+                      const statusTubo = laudoGravado?.status || item.status_laudo || (item.tem_laudo ? "finalizado" : "pendente");
+                      const ehFinalizado = statusTubo === "finalizado";
+                      const ehRascunho = statusTubo === "rascunho";
+                      const ehRecoleta = statusTubo === "recoleta";
                       return (
-                        <tr key={item.prontuario + idx} className="hover:bg-slate-50/80 transition">
+                        <tr key={item.prontuario + idx} className={`hover:bg-slate-50/80 transition ${ehRecoleta ? "bg-rose-50/30" : ""}`}>
                           <td className="py-3 px-3.5 text-center">
-                            <span className="font-black font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md text-[11px]">
+                            <span
+                              className={`font-black font-mono px-2 py-0.5 rounded-md text-[11px] ${
+                                ehFinalizado
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : ehRascunho
+                                  ? "bg-amber-100 text-amber-800"
+                                  : ehRecoleta
+                                  ? "bg-rose-100 text-rose-800"
+                                  : "bg-slate-100 text-slate-700"
+                              }`}
+                            >
                               #{idx + 1}
                             </span>
                           </td>
@@ -1366,19 +1548,31 @@ export default function BancadaOperacionalPage() {
                           </td>
 
                           <td className="py-3 px-3.5 text-center">
-                            {isConcluido ? (
+                            {ehFinalizado ? (
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                <Check className="w-3.5 h-3.5 text-emerald-600" /> Concluído no Celular
+                                <Check className="w-3.5 h-3.5 text-emerald-600" /> Finalizado no Celular
+                              </span>
+                            ) : ehRascunho ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                <FileSpreadsheet className="w-3.5 h-3.5 text-amber-600" /> Fita / Rascunho
+                              </span>
+                            ) : ehRecoleta ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-600" /> Recoleta Solicitada
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                                <Smartphone className="w-3.5 h-3.5 text-amber-600" /> Contagem pelo Celular
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                <Clock className="w-3.5 h-3.5 text-slate-400" /> Aguardando Celular
                               </span>
                             )}
                           </td>
 
                           <td className="py-3 px-3.5 text-slate-800 font-mono text-[11px]">
-                            {laudoGravado ? (
+                            {ehRecoleta ? (
+                              <div className="p-2 bg-rose-50 border border-rose-300 rounded-lg text-rose-900 font-bold text-xs">
+                                ⚠️ RECOLETA SOLICITADA: {laudoGravado?.observacoes || "Amostra inadequada para análise técnica."}
+                              </div>
+                            ) : laudoGravado ? (
                               <div className="space-y-0.5">
                                 {item.tem_urina && (
                                   <div className="text-slate-900">
@@ -1614,6 +1808,15 @@ export default function BancadaOperacionalPage() {
                   const isAtivo =
                     formatarProntuario(pacienteInfo?.prontuario) ===
                     formatarProntuario(item.prontuario);
+
+                  const laudoItem = laudosDia.find(
+                    (l) => formatarProntuario(l.prontuario) === formatarProntuario(item.prontuario)
+                  );
+                  const statusItem = laudoItem?.status || item.status_laudo || (item.tem_laudo ? "finalizado" : "pendente");
+                  const ehFinalizado = statusItem === "finalizado";
+                  const ehRascunho = statusItem === "rascunho";
+                  const ehRecoleta = statusItem === "recoleta";
+
                   return (
                     <button
                       key={item.prontuario + idx}
@@ -1622,8 +1825,12 @@ export default function BancadaOperacionalPage() {
                       className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-left transition-all active:scale-95 ${
                         isAtivo
                           ? "bg-sky-700 text-white border-sky-700 shadow-sm"
-                          : item.tem_laudo
+                          : ehFinalizado
                           ? "bg-emerald-50 text-emerald-950 border-emerald-300"
+                          : ehRascunho
+                          ? "bg-amber-50 text-amber-950 border-amber-400 shadow-xs"
+                          : ehRecoleta
+                          ? "bg-rose-50 text-rose-950 border-rose-400"
                           : "bg-slate-50 text-slate-800 border-slate-200"
                       }`}
                     >
@@ -1631,8 +1838,12 @@ export default function BancadaOperacionalPage() {
                         className={`w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0 ${
                           isAtivo
                             ? "bg-white/20 text-white"
-                            : item.tem_laudo
+                            : ehFinalizado
                             ? "bg-emerald-600 text-white"
+                            : ehRascunho
+                            ? "bg-amber-500 text-white font-bold"
+                            : ehRecoleta
+                            ? "bg-rose-600 text-white font-bold"
                             : "bg-slate-200 text-slate-800"
                         }`}
                       >
@@ -1643,15 +1854,27 @@ export default function BancadaOperacionalPage() {
                           {item.nome_paciente.split(" ")[0]}{" "}
                           {item.nome_paciente.split(" ")[1] || ""}
                         </div>
-                        <div
-                          className={`text-[9.5px] font-mono ${
-                            isAtivo ? "text-sky-100" : "text-slate-500"
-                          }`}
-                        >
-                          {formatarProntuario(item.prontuario)}
+                        <div className="flex items-center gap-1">
+                          <span
+                            className={`text-[9.5px] font-mono ${
+                              isAtivo ? "text-sky-100" : "text-slate-500"
+                            }`}
+                          >
+                            {formatarProntuario(item.prontuario)}
+                          </span>
+                          {!isAtivo && ehRascunho && (
+                            <span className="text-[7.5px] font-black uppercase px-1 py-0.2 rounded bg-amber-200 text-amber-900">
+                              Fita
+                            </span>
+                          )}
+                          {!isAtivo && ehRecoleta && (
+                            <span className="text-[7.5px] font-black uppercase px-1 py-0.2 rounded bg-rose-200 text-rose-900">
+                              Recol
+                            </span>
+                          )}
                         </div>
                       </div>
-                      {item.tem_laudo && !isAtivo && (
+                      {!isAtivo && ehFinalizado && (
                         <Check className="w-3 h-3 text-emerald-600 shrink-0" />
                       )}
                     </button>
@@ -2042,6 +2265,28 @@ export default function BancadaOperacionalPage() {
                   </div>
                 </div>
               </section>
+
+              {/* BOTÃO RÁPIDO PARA SALVAR FITA / RASCUNHO (AGUARDANDO MICROSCOPIA) */}
+              <div className="flex items-center justify-between gap-2 p-2.5 bg-amber-50 border border-amber-300 rounded-xl mb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🧪</span>
+                  <div className="text-[11px] text-amber-950 font-bold leading-tight">
+                    Passou a fita reagente?
+                    <span className="block text-[9.5px] font-normal text-amber-800">
+                      Salve como Rascunho (laranjinha) e vá para o microscópio depois.
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => handleSalvar("rascunho")}
+                  className="shrink-0 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-black text-xs rounded-lg shadow-xs flex items-center gap-1 active:scale-95 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Salvar Fita</span>
+                </button>
+              </div>
 
               {/* SEÇÃO 2: SEDIMENTOSCOPIA / MICROSCOPIA */}
               <section className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-3 mb-2.5">
@@ -2814,43 +3059,13 @@ export default function BancadaOperacionalPage() {
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                 {previewImpressao === "triagem" ? (
                   <MapaBancadaPrintView
-                    pacientes={rotinaDia}
-                    laudos={laudosDia}
+                    pacientes={rotinaDoDia}
+                    laudos={laudosDoDia}
                     dataRotina={dataHoje}
                   />
                 ) : (
                   <RelatorioBancadaDiaPrintView
-                    laudos={
-                      laudosDia.length > 0
-                        ? laudosDia
-                        : rotinaDia.map((r) => ({
-                            prontuario: r.prontuario,
-                            nome_paciente: r.nome_paciente,
-                            idade_sexo: r.idade_sexo,
-                            posto_unidade: r.posto_unidade,
-                            solicitante: r.solicitante,
-                            data_hora: dataHoje || "2026-10-26",
-                            status: (r.tem_laudo ? "finalizado" : "rascunho") as StatusLaudo,
-                            observacoes: "",
-                            tem_urina: Boolean(r.tem_urina),
-                            tem_vdrl: r.tem_vdrl,
-                            resultado_vdrl: r.tem_vdrl ? "Não Reagente" : undefined,
-                            tem_abo_rh: r.tem_abo_rh,
-                            resultado_abo_rh: r.tem_abo_rh ? "O Positivo (+)" : undefined,
-                            tem_pso: r.tem_pso,
-                            resultado_pso: r.tem_pso ? "Negativo" : undefined,
-                            tem_coagulograma: r.tem_coagulograma,
-                            tp_tempo: r.tem_coagulograma ? "12.5s" : undefined,
-                            tp_inr: r.tem_coagulograma ? "1.00" : undefined,
-                            tem_beta_hcg: r.tem_beta_hcg,
-                            resultado_beta_hcg: r.tem_beta_hcg ? "Negativo" : undefined,
-                            tem_proteinuria_rapida: r.tem_proteinuria_rapida,
-                            resultado_proteinuria_rapida: r.tem_proteinuria_rapida ? "Negativo" : undefined,
-                            tem_vhs: r.tem_vhs,
-                            resultado_vhs: r.tem_vhs ? "10 mm/h" : undefined,
-                            ...(r.tem_urina ? VALORES_PADRAO_NORMAL : VALORES_SEM_URINA),
-                          }))
-                    }
+                    laudos={laudosParaRelatorio}
                     dataSelecionada={dataHoje}
                     modo={modoRelatorio}
                   />
@@ -2865,43 +3080,13 @@ export default function BancadaOperacionalPage() {
       <div className="hidden print:block">
         {tipoImpressao === "triagem" ? (
           <MapaBancadaPrintView
-            pacientes={rotinaDia}
-            laudos={laudosDia}
+            pacientes={rotinaDoDia}
+            laudos={laudosDoDia}
             dataRotina={dataHoje}
           />
         ) : (
           <RelatorioBancadaDiaPrintView
-            laudos={
-              laudosDia.length > 0
-                ? laudosDia
-                : rotinaDia.map((r) => ({
-                    prontuario: r.prontuario,
-                    nome_paciente: r.nome_paciente,
-                    idade_sexo: r.idade_sexo,
-                    posto_unidade: r.posto_unidade,
-                    solicitante: r.solicitante,
-                    data_hora: dataHoje || "2026-10-26",
-                    status: (r.tem_laudo ? "finalizado" : "rascunho") as StatusLaudo,
-                    observacoes: "",
-                    tem_urina: Boolean(r.tem_urina),
-                    tem_vdrl: r.tem_vdrl,
-                    resultado_vdrl: r.tem_vdrl ? "Não Reagente" : undefined,
-                    tem_abo_rh: r.tem_abo_rh,
-                    resultado_abo_rh: r.tem_abo_rh ? "O Positivo (+)" : undefined,
-                    tem_pso: r.tem_pso,
-                    resultado_pso: r.tem_pso ? "Negativo" : undefined,
-                    tem_coagulograma: r.tem_coagulograma,
-                    tp_tempo: r.tem_coagulograma ? "12.5s" : undefined,
-                    tp_inr: r.tem_coagulograma ? "1.00" : undefined,
-                    tem_beta_hcg: r.tem_beta_hcg,
-                    resultado_beta_hcg: r.tem_beta_hcg ? "Negativo" : undefined,
-                    tem_proteinuria_rapida: r.tem_proteinuria_rapida,
-                    resultado_proteinuria_rapida: r.tem_proteinuria_rapida ? "Negativo" : undefined,
-                    tem_vhs: r.tem_vhs,
-                    resultado_vhs: r.tem_vhs ? "10 mm/h" : undefined,
-                    ...(r.tem_urina ? VALORES_PADRAO_NORMAL : VALORES_SEM_URINA),
-                  }))
-            }
+            laudos={laudosParaRelatorio}
             dataSelecionada={dataHoje}
             modo={modoRelatorio}
           />

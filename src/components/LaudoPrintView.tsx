@@ -105,15 +105,47 @@ export const LaudoPrintView: React.FC<LaudoPrintViewProps> = ({
       </div>
 
       {/* TÍTULO DO EXAME */}
-      <div className="bg-slate-800 text-white font-bold py-1 px-3 text-center rounded-t text-xs uppercase tracking-wider mb-2 print:bg-slate-200 print:text-black print:border print:border-black">
-        {laudo.tem_urina !== false && Boolean(laudo.cor || laudo.aspecto || laudo.densidade)
+      <div className={`text-white font-bold py-1 px-3 text-center rounded-t text-xs uppercase tracking-wider mb-2 print:border print:border-black ${
+        laudo.status === "recoleta"
+          ? "bg-rose-700 print:bg-slate-200 print:text-black"
+          : "bg-slate-800 print:bg-slate-200 print:text-black"
+      }`}>
+        {laudo.status === "recoleta"
+          ? "LAUDO LABORATORIAL — SOLICITAÇÃO DE RECOLETA"
+          : laudo.tem_urina !== false && Boolean(laudo.cor || laudo.aspecto || laudo.densidade)
           ? "URINA TIPO I - ELEMENTOS ANORMAIS E SEDIMENTO (EAS / SUMÁRIO DE URINA)"
           : "EXAMES DE BANCADA & TESTES RÁPIDOS LABORATORIAIS"}
       </div>
 
-      {/* TABELAS DO EXAME FÍSICO-QUÍMICO E SEDIMENTOSCOPIA (SOMENTE SE URINA ESTIVER SOLICITADA) */}
-      {laudo.tem_urina !== false && Boolean(laudo.cor || laudo.aspecto || laudo.densidade) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 avoid-break">
+      {/* SE FOR RECOLETA: EXIBE PAINEL EXCLUSIVO E DESTACADO DE RECOLETA */}
+      {laudo.status === "recoleta" ? (
+        <div className="border-2 border-rose-600 bg-rose-50/40 rounded-xl p-6 mb-6 text-center space-y-4 avoid-break print:border-black print:bg-slate-50">
+          <div className="inline-block bg-rose-600 text-white font-black text-sm px-4 py-1.5 rounded uppercase tracking-wider print:bg-black">
+            ⚠️ SOLICITAÇÃO DE RECOLETA DE AMOSTRA
+          </div>
+          
+          <div className="text-slate-900 font-bold text-xs max-w-lg mx-auto">
+            A análise laboratorial desta amostra não pôde ser concluída e necessita de nova coleta para garantir a confiabilidade técnica do resultado.
+          </div>
+
+          <div className="bg-white border-2 border-rose-300 rounded-xl p-4 text-left max-w-xl mx-auto print:border-black">
+            <span className="text-[11px] font-black uppercase text-rose-800 block mb-1">
+              Motivo da Recoleta / Justificativa Técnica:
+            </span>
+            <p className="text-sm font-bold text-slate-950 uppercase">
+              {laudo.observacoes?.trim() || "Amostra insuficiente ou inadequada para análise técnica. Solicitar nova coleta ao paciente."}
+            </p>
+          </div>
+
+          <div className="text-[11px] text-slate-600 font-medium max-w-md mx-auto">
+            Por gentileza, orientar o paciente para nova coleta e encaminhar a nova amostra devidamente identificada ao Laboratório Municipal.
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* TABELAS DO EXAME FÍSICO-QUÍMICO E SEDIMENTOSCOPIA (SOMENTE SE URINA ESTIVER SOLICITADA) */}
+          {laudo.tem_urina !== false && Boolean(laudo.cor || laudo.aspecto || laudo.densidade) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 avoid-break">
         {/* PARTE 1: EXAME FÍSICO-QUÍMICO */}
         <div className="border border-slate-300 rounded overflow-hidden print:border-slate-800">
           <div className="bg-slate-200 px-2.5 py-1 font-bold text-[11px] text-slate-800 border-b border-slate-300 uppercase print:bg-slate-100">
@@ -461,18 +493,22 @@ export const LaudoPrintView: React.FC<LaudoPrintViewProps> = ({
           </table>
         </div>
       )}
+      </>
+      )}
 
       {/* OBSERVAÇÕES DO LAUDO */}
-      <div className="border border-slate-300 rounded p-2.5 mb-6 text-[10.5px] avoid-break print:border-slate-800">
+      <div className={`border rounded p-3 mb-6 text-[10.5px] avoid-break ${
+        laudo.status === "recoleta" ? "border-rose-400 bg-rose-50/30 print:border-black" : "border-slate-300 print:border-slate-800"
+      }`}>
         <span className="font-bold text-slate-800 uppercase block text-[9.5px] mb-0.5">
           Observações Clínico-Laboratoriais:
         </span>
-        <p className="text-slate-800 italic">
-          {laudo.observacoes?.trim() || "Sem observações adicionais. Exame realizado sob controle interno de qualidade."}
+        <p className="text-slate-900 font-semibold italic">
+          {laudo.observacoes?.trim() || (laudo.status === "recoleta" ? "Amostra com solicitação de recoleta técnica." : "Sem observações adicionais. Exame realizado sob controle interno de qualidade.")}
         </p>
         {laudo.status === "recoleta" && (
-          <div className="mt-1 text-rose-700 font-bold text-[10px]">
-            * AMOSTRA SINALIZADA PARA RECOLETA CONFORME JUSTIFICATIVA ACIMA.
+          <div className="mt-1 text-rose-700 font-black text-[10px] uppercase">
+            * ATENÇÃO: AMOSTRA SINALIZADA PARA RECOLETA CONFORME JUSTIFICATIVA TÉCNICA ACIMA.
           </div>
         )}
       </div>

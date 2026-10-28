@@ -125,7 +125,9 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
             const hasVdrl = Boolean(l.tem_vdrl || l.resultado_vdrl);
             const hasAbo = Boolean(l.tem_abo_rh || l.resultado_abo_rh);
             const hasPso = Boolean(l.tem_pso || l.resultado_pso);
-            const hasCoag = Boolean(l.tem_coagulograma || l.tp_tempo);
+            const hasTp = Boolean(l.tem_tap || l.tp_tempo);
+            const hasTtpa = Boolean(l.tem_ttpa || l.ttpa_tempo);
+            const hasCoag = Boolean(l.tem_coagulograma || hasTp || hasTtpa);
             const hasBeta = Boolean(l.tem_beta_hcg || l.resultado_beta_hcg);
             const hasProt = Boolean(l.tem_proteinuria_rapida || l.resultado_proteinuria_rapida);
             const hasVhs = Boolean(l.tem_vhs || l.resultado_vhs);
@@ -228,11 +230,24 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                       </div>
                     )}
                     {hasCoag && (
-                      <div className="p-2 border border-slate-400 bg-slate-50 rounded text-left">
-                        <span className="text-[9px] font-black uppercase text-slate-950 block">Coagulograma / TAP</span>
-                        <span className="text-[10px] font-black text-slate-900">
-                          TP: {l.tp_tempo || "12.5s"} (INR: {l.tp_inr || "1.00"})
+                      <div className="p-1.5 border border-slate-400 bg-slate-50 rounded text-left space-y-0.5">
+                        <span className="text-[8.5px] font-black uppercase text-slate-950 block">
+                          {hasTp && !hasTtpa
+                            ? "TAP / TP (Protrombina)"
+                            : hasTtpa && !hasTp
+                            ? "TTPA (Tromboplastina)"
+                            : "Coagulograma"}
                         </span>
+                        {hasTp && (
+                          <div className="text-[9.5px] font-black text-slate-900">
+                            TP: {l.tp_tempo || "12.0s"} (INR: {l.tp_inr || "1.00"})
+                          </div>
+                        )}
+                        {hasTtpa && (
+                          <div className="text-[9.5px] font-black text-slate-900">
+                            TTPA: {l.ttpa_tempo || "30.0s"} (Rel: {l.ttpa_relacao || "1.00"})
+                          </div>
+                        )}
                       </div>
                     )}
                     {hasPso && (
@@ -292,12 +307,22 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                     {hasBeta && (
                       <div className="font-bold">BETA: {l.resultado_beta_hcg || "Negativo"}</div>
                     )}
-                    {hasCoag && (
-                      <div className="font-bold">TP: {l.tp_tempo || "12.5s"}</div>
+                    {hasTp && (
+                      <div className="font-bold">TP: {l.tp_tempo || "12.0s"}</div>
+                    )}
+                    {hasTtpa && (
+                      <div className="font-bold">TTPA: {l.ttpa_tempo || "30.0s"}</div>
                     )}
                     {hasVhs && (
                       <div className="font-bold">VHS: {l.resultado_vhs || "10mm"}</div>
                     )}
+                  </div>
+                )}
+
+                {/* OBSERVAÇÕES DO EXAME / LAUDO */}
+                {l.observacoes?.trim() && !isRecoleta && (
+                  <div className="mt-1 pt-1 border-t border-dotted border-slate-400 text-[8px] leading-tight text-slate-800 font-sans">
+                    <span className="font-bold text-black uppercase">Obs:</span> {l.observacoes.trim()}
                   </div>
                 )}
               </div>
@@ -315,7 +340,9 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
             const hasVdrl = Boolean(l.tem_vdrl || l.resultado_vdrl);
             const hasAbo = Boolean(l.tem_abo_rh || l.resultado_abo_rh);
             const hasPso = Boolean(l.tem_pso || l.resultado_pso);
-            const hasCoag = Boolean(l.tem_coagulograma || l.tp_tempo);
+            const hasTp = Boolean(l.tem_tap || l.tp_tempo);
+            const hasTtpa = Boolean(l.tem_ttpa || l.ttpa_tempo);
+            const hasCoag = Boolean(l.tem_coagulograma || hasTp || hasTtpa);
             const hasBeta = Boolean(l.tem_beta_hcg || l.resultado_beta_hcg);
             const hasProt = Boolean(l.tem_proteinuria_rapida || l.resultado_proteinuria_rapida);
             const hasVhs = Boolean(l.tem_vhs || l.resultado_vhs);
@@ -453,12 +480,24 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                             </div>
                           )}
                           {hasCoag && (
-                            <div className="p-2 bg-slate-100 border border-slate-400 rounded col-span-2 sm:col-span-1">
-                              <span className="font-bold text-slate-900 block text-[9px] uppercase">Coagulograma / TAP:</span>
-                              <span className="font-black text-slate-900 text-[10.5px]">
-                                TP: {l.tp_tempo || "12.5s"} (INR: {l.tp_inr || "1.00"})
-                                {l.ttpa_tempo ? ` | TTPA: ${l.ttpa_tempo}` : ""}
+                            <div className="p-2 bg-slate-100 border border-slate-400 rounded col-span-2 sm:col-span-1 space-y-0.5">
+                              <span className="font-bold text-slate-900 block text-[9px] uppercase">
+                                {hasTp && !hasTtpa
+                                  ? "TAP / TP (Protrombina):"
+                                  : hasTtpa && !hasTp
+                                  ? "TTPA (Tromboplastina):"
+                                  : "Coagulograma (TP & TTPA):"}
                               </span>
+                              {hasTp && (
+                                <span className="font-black text-slate-900 text-[10.5px] block">
+                                  TP: {l.tp_tempo || "12.0s"} (INR: {l.tp_inr || "1.00"})
+                                </span>
+                              )}
+                              {hasTtpa && (
+                                <span className="font-black text-slate-900 text-[10.5px] block">
+                                  TTPA: {l.ttpa_tempo || "30.0s"} (Rel: {l.ttpa_relacao || "1.00"})
+                                </span>
+                              )}
                             </div>
                           )}
                           {hasBeta && (
@@ -492,6 +531,12 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                             </div>
                           )}
                         </div>
+                      </div>
+                    )}
+                    {/* OBSERVAÇÕES NA CAIXA DO PACIENTE */}
+                    {l.observacoes?.trim() && !isRecoleta && (
+                      <div className="mt-1 p-1.5 bg-slate-50 border border-slate-300 rounded text-[9.5px] text-slate-800 font-sans">
+                        <span className="font-bold text-slate-900 uppercase">Observações:</span> {l.observacoes.trim()}
                       </div>
                     )}
                   </>
@@ -563,9 +608,11 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                         l.resultado_abo_rh ? `ABO/Rh: ${l.resultado_abo_rh}` : null,
                         l.resultado_proteinuria_rapida ? `Prot. Rápida: ${l.resultado_proteinuria_rapida}` : null,
                         l.resultado_pso ? `PSO: ${l.resultado_pso}` : null,
-                        l.tp_tempo ? `TP: ${l.tp_tempo}` : null,
+                        l.tp_tempo ? `TP: ${l.tp_tempo} (INR ${l.tp_inr || "1.00"})` : null,
+                        l.ttpa_tempo ? `TTPA: ${l.ttpa_tempo}` : null,
                         l.resultado_beta_hcg ? `Beta: ${l.resultado_beta_hcg}` : null,
                         l.resultado_vhs ? `VHS: ${l.resultado_vhs}` : null,
+                        l.observacoes?.trim() ? `Obs: ${l.observacoes.trim()}` : null,
                       ]
                         .filter(Boolean)
                         .join(" • ") || "-"

@@ -484,27 +484,45 @@ export default function BancadaOperacionalPage() {
       setResultadoPcr("Negativo (< 6 mg/L)");
       setResultadoAslo("Negativo (< 200 UI/mL)");
       setResultadoFr("Negativo (< 8 UI/mL)");
-      setCoagTpTempo("12.5 seg");
-      setCoagTpInr("1.00");
-      setCoagTtpaTempo("30.0 seg");
-      setCoagTtpaRelacao("1.00");
+      const pacSoTap = pac.tem_tap && !pac.tem_ttpa;
+      const pacSoTtpa = pac.tem_ttpa && !pac.tem_tap;
+      setCoagTpTempo(pacSoTtpa ? "" : "12.0 seg");
+      setCoagTpInr(pacSoTtpa ? "" : "1.00");
+      setCoagTtpaTempo(pacSoTap ? "" : "30.0 seg");
+      setCoagTtpaRelacao(pacSoTap ? "" : "1.00");
       setCoagRepetido(false);
       setResultadoProteinuriaRapida("Negativo");
     }
   };
 
+  // Pacientes e Laudos estritamente filtrados pela data da rotina selecionada (evita misturar pacientes de outros dias)
+  const laudosDoDia = React.useMemo(() => {
+    if (!dataHoje) return laudosDia;
+    const alvo = dataHoje.trim();
+    return laudosDia.filter((l) => (l.data_hora || "").split("T")[0] === alvo);
+  }, [laudosDia, dataHoje]);
+
+  const rotinaDoDia = React.useMemo(() => {
+    if (!dataHoje) return rotinaDia;
+    const alvo = dataHoje.trim();
+    return rotinaDia.filter((r) => {
+      const d = (r.data || r.data_rotina || "").split("T")[0];
+      return d === alvo;
+    });
+  }, [rotinaDia, dataHoje]);
+
   // Filtrar sugestões de autocomplete por prontuário ou nome
   const sugestoesBusca = React.useMemo(() => {
     const q = prontuario.trim().toLowerCase();
     if (!q) return [];
-    return rotinaDia
+    return rotinaDoDia
       .filter(
         (r) =>
           r.prontuario.toLowerCase().includes(q) ||
           r.nome_paciente.toLowerCase().includes(q)
       )
       .slice(0, 8);
-  }, [prontuario, rotinaDia]);
+  }, [prontuario, rotinaDoDia]);
 
   /**
    * FILA SEQUENCIAL DE TUBOS DA BANCADA ATIVA (ORDEM ALFABÉTICA EXATA DA TIRAGEM!)
@@ -513,7 +531,7 @@ export default function BancadaOperacionalPage() {
    * Aqui filtramos os pacientes do setor ativo mantendo a EXATA ordem alfabética (1, 2, 3, 4, 5, 6...).
    */
   const filaBancada = React.useMemo(() => {
-    const ordenada = [...rotinaDia].sort((a, b) =>
+    const ordenada = [...rotinaDoDia].sort((a, b) =>
       a.nome_paciente.localeCompare(b.nome_paciente, "pt-BR")
     );
     if (bancadaAtiva === "pso") {
@@ -708,10 +726,12 @@ export default function BancadaOperacionalPage() {
         tem_fr: Boolean(pacienteInfo?.tem_fr || (temProvasInflamatorias && resultadoFr)),
         resultado_fr: temProvasInflamatorias ? resultadoFr : "",
         tem_coagulograma: temCoagulograma || bancadaAtiva === "coag",
-        tp_tempo: temCoagulograma || bancadaAtiva === "coag" ? coagTpTempo : "",
-        tp_inr: temCoagulograma || bancadaAtiva === "coag" ? coagTpInr : "",
-        ttpa_tempo: temCoagulograma || bancadaAtiva === "coag" ? coagTtpaTempo : "",
-        ttpa_relacao: temCoagulograma || bancadaAtiva === "coag" ? coagTtpaRelacao : "",
+        tem_tap: Boolean(pacienteInfo?.tem_tap || coagTpTempo),
+        tem_ttpa: Boolean(pacienteInfo?.tem_ttpa || coagTtpaTempo),
+        tp_tempo: (temCoagulograma || bancadaAtiva === "coag") && coagTpTempo ? coagTpTempo : "",
+        tp_inr: (temCoagulograma || bancadaAtiva === "coag") && coagTpInr ? coagTpInr : "",
+        ttpa_tempo: (temCoagulograma || bancadaAtiva === "coag") && coagTtpaTempo ? coagTtpaTempo : "",
+        ttpa_relacao: (temCoagulograma || bancadaAtiva === "coag") && coagTtpaRelacao ? coagTtpaRelacao : "",
         tem_proteinuria_rapida: temProteinuriaRapida,
         resultado_proteinuria_rapida: temProteinuriaRapida ? resultadoProteinuriaRapida : "",
       };
@@ -789,24 +809,6 @@ export default function BancadaOperacionalPage() {
     }));
   };
 
-  // Pacientes e Laudos estritamente filtrados pela data da rotina selecionada (evita misturar pacientes de outros dias)
-  const laudosDoDia = React.useMemo(() => {
-    if (!dataHoje) return laudosDia;
-    const alvo = dataHoje.trim();
-    const filtrados = laudosDia.filter((l) => (l.data_hora || "").split("T")[0] === alvo);
-    return filtrados.length > 0 ? filtrados : laudosDia;
-  }, [laudosDia, dataHoje]);
-
-  const rotinaDoDia = React.useMemo(() => {
-    if (!dataHoje) return rotinaDia;
-    const alvo = dataHoje.trim();
-    const filtrados = rotinaDia.filter((r) => {
-      const d = (r.data || r.data_rotina || "").split("T")[0];
-      return !d || d === alvo;
-    });
-    return filtrados.length > 0 ? filtrados : rotinaDia;
-  }, [rotinaDia, dataHoje]);
-
   // Monta a relação oficial e completa de laudos para o Relatório do Dia / Canhotos recortáveis
   const laudosParaRelatorio = React.useMemo(() => {
     const mapaLaudosHoje = new Map<string, LaudoUrina>();
@@ -842,8 +844,12 @@ export default function BancadaOperacionalPage() {
           tem_pso: r.tem_pso,
           resultado_pso: r.tem_pso ? "Negativo" : undefined,
           tem_coagulograma: r.tem_coagulograma,
-          tp_tempo: r.tem_coagulograma ? "12.5s" : undefined,
-          tp_inr: r.tem_coagulograma ? "1.00" : undefined,
+          tem_tap: r.tem_tap,
+          tem_ttpa: r.tem_ttpa,
+          tp_tempo: (r.tem_tap || (r.tem_coagulograma && !r.tem_ttpa)) ? "12.0s" : r.tem_coagulograma ? "12.0s" : undefined,
+          tp_inr: (r.tem_tap || (r.tem_coagulograma && !r.tem_ttpa)) ? "1.00" : r.tem_coagulograma ? "1.00" : undefined,
+          ttpa_tempo: (r.tem_ttpa || (r.tem_coagulograma && !r.tem_tap)) ? "30.0s" : (r.tem_coagulograma && !r.tem_tap ? "30.0s" : undefined),
+          ttpa_relacao: (r.tem_ttpa || (r.tem_coagulograma && !r.tem_tap)) ? "1.00" : (r.tem_coagulograma && !r.tem_tap ? "1.00" : undefined),
           tem_beta_hcg: r.tem_beta_hcg,
           resultado_beta_hcg: r.tem_beta_hcg ? "Negativo" : undefined,
           tem_proteinuria_rapida: r.tem_proteinuria_rapida,
@@ -1411,13 +1417,13 @@ export default function BancadaOperacionalPage() {
               <div className="p-16 text-center text-slate-400">
                 <FileSpreadsheet className="w-12 h-12 mx-auto mb-3 opacity-30 text-slate-400" />
                 <p className="font-bold text-sm text-slate-700">
-                  {rotinaDia.length === 0
-                    ? "Nenhuma tiragem carregada no momento"
+                  {rotinaDoDia.length === 0
+                    ? `Rotina vazia para ${dataHoje || "hoje"}`
                     : "Nenhum paciente corresponde ao filtro selecionado"}
                 </p>
-                <p className="text-xs mt-1 text-slate-400">
-                  {rotinaDia.length === 0
-                    ? "Clique no botão 'Selecionar Arquivo Conecta SUS' acima para gerar a tiragem do dia automaticamente."
+                <p className="text-xs mt-1 text-slate-500">
+                  {rotinaDoDia.length === 0
+                    ? "Clique em 'Selecionar Arquivo Conecta SUS' acima para carregar o documento do dia, ou escolha uma data no seletor para ver o histórico."
                     : "Altere os filtros acima para visualizar todos os pacientes."}
                 </p>
               </div>
@@ -1649,6 +1655,56 @@ export default function BancadaOperacionalPage() {
         /* Layout compacto otimizado para telas pequenas                  */
         /* ============================================================== */
         <div className="max-w-lg mx-auto px-2.5 pt-2.5 pb-8 print:hidden">
+          {/* SELETOR DE DATA / HISTÓRICO NO CELULAR */}
+          <div className="flex items-center justify-between bg-white border border-slate-200 shadow-2xs rounded-xl px-2.5 py-1.5 mb-2 text-xs">
+            <div className="flex items-center gap-1.5 font-bold text-slate-700">
+              <Calendar className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+              <span className="text-[11px] font-black uppercase text-slate-500">Data:</span>
+              <input
+                type="date"
+                value={dataHoje}
+                onChange={(e) => {
+                  const nova = e.target.value;
+                  setDataHoje(nova);
+                  carregarDadosSincronizados(false, nova);
+                }}
+                className="bg-slate-50 border border-slate-300 rounded-md px-1.5 py-0.5 text-xs font-bold text-slate-900"
+              />
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const h = new Date().toISOString().split("T")[0];
+                  setDataHoje(h);
+                  carregarDadosSincronizados(false, h);
+                }}
+                className={`px-2 py-0.5 rounded-md text-[10.5px] font-black transition ${
+                  dataHoje === new Date().toISOString().split("T")[0]
+                    ? "bg-sky-700 text-white shadow-2xs"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+              >
+                Hoje
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const o = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+                  setDataHoje(o);
+                  carregarDadosSincronizados(false, o);
+                }}
+                className={`px-2 py-0.5 rounded-md text-[10.5px] font-black transition ${
+                  dataHoje === new Date(Date.now() - 86400000).toISOString().split("T")[0]
+                    ? "bg-sky-700 text-white shadow-2xs"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+              >
+                Ontem
+              </button>
+            </div>
+          </div>
+
           {/* ABAS DE SETOR COMPACTAS PARA TELAS PEQUENAS COM CONTAGENS EM TEMPO REAL */}
           <div className="grid grid-cols-4 gap-1.5 mb-2">
             {[
@@ -1809,7 +1865,7 @@ export default function BancadaOperacionalPage() {
                     formatarProntuario(pacienteInfo?.prontuario) ===
                     formatarProntuario(item.prontuario);
 
-                  const laudoItem = laudosDia.find(
+                  const laudoItem = laudosDoDia.find(
                     (l) => formatarProntuario(l.prontuario) === formatarProntuario(item.prontuario)
                   );
                   const statusItem = laudoItem?.status || item.status_laudo || (item.tem_laudo ? "finalizado" : "pendente");
@@ -2366,28 +2422,118 @@ export default function BancadaOperacionalPage() {
                     ]}
                   />
 
-                  <div className="space-y-1.5">
-                    <QuickChipSelect
-                      compact
-                      label="Cristais"
-                      value={form.cristais}
-                      onChange={(val) => setForm({ ...form, cristais: val })}
-                      options={[
-                        { label: "Ausentes", value: "Ausentes" },
-                        { label: "Oxalato Cálcio", value: "Oxalato de cálcio", isAbnormal: true },
-                        { label: "Urato Amorfo", value: "Urato amorfo", isAbnormal: true },
-                        { label: "Fosfato Amorfo", value: "Fosfato amorfo", isAbnormal: true },
-                        { label: "Fosfato Triplo", value: "Fosfato triplo", isAbnormal: true },
-                        { label: "Ácido Úrico", value: "Ácido úrico", isAbnormal: true },
-                      ]}
-                    />
-                    <input
-                      type="text"
-                      value={form.cristais}
-                      onChange={(e) => setForm({ ...form, cristais: e.target.value })}
-                      placeholder="Texto livre cristais..."
-                      className="w-full text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-teal-600 focus:bg-white text-slate-800"
-                    />
+                  <div className="space-y-2 bg-slate-50/70 p-2.5 rounded-xl border border-slate-200">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-black text-slate-800 uppercase tracking-tight">
+                        Cristais (Tipo & Quantificação / Cruzes)
+                      </label>
+                      {form.cristais && form.cristais !== "Ausentes" && (
+                        <button
+                          type="button"
+                          onClick={() => setForm({ ...form, cristais: "Ausentes" })}
+                          className="text-[10px] text-rose-600 font-bold hover:underline"
+                        >
+                          Limpar p/ Ausentes
+                        </button>
+                      )}
+                    </div>
+
+                    {/* 1. SELEÇÃO DO TIPO DE CRISTAL */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase block">1. Tipo de Cristal:</span>
+                      <div className="flex flex-wrap gap-1">
+                        {[
+                          { label: "Ausentes", val: "Ausentes" },
+                          { label: "Oxalato de Cálcio", val: "Oxalato de cálcio" },
+                          { label: "Urato Amorfo", val: "Urato amorfo" },
+                          { label: "Fosfato Amorfo", val: "Fosfato amorfo" },
+                          { label: "Fosfato Triplo", val: "Fosfato triplo" },
+                          { label: "Ácido Úrico", val: "Ácido úrico" },
+                          { label: "Cistina", val: "Cistina" },
+                          { label: "Bilirrubina", val: "Bilirrubina" },
+                        ].map((item) => {
+                          const selecionado =
+                            item.val === "Ausentes"
+                              ? form.cristais === "Ausentes" || !form.cristais
+                              : form.cristais.toLowerCase().includes(item.val.toLowerCase());
+                          return (
+                            <button
+                              key={item.val}
+                              type="button"
+                              onClick={() => {
+                                if (item.val === "Ausentes") {
+                                  setForm({ ...form, cristais: "Ausentes" });
+                                } else {
+                                  const matchQtd = form.cristais.match(/\(([^)]+)\)|\b(rar[a-z]+|\+{1,4}|alguns|frequentes|numerosos)\b/i);
+                                  const qtdExistente = matchQtd ? ` (${matchQtd[1] || matchQtd[2]})` : " (+)";
+                                  setForm({ ...form, cristais: `${item.val}${qtdExistente}` });
+                                }
+                              }}
+                              className={`px-2 py-1 rounded-lg text-[11px] font-bold border transition active:scale-95 ${
+                                selecionado
+                                  ? "bg-teal-700 text-white border-teal-700 shadow-xs"
+                                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                              }`}
+                            >
+                              {item.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 2. QUANTIFICAÇÃO / CRUZES */}
+                    {form.cristais && form.cristais !== "Ausentes" && (
+                      <div className="space-y-1 pt-1 border-t border-slate-200">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">2. Quantidade / Cruzes:</span>
+                        <div className="flex flex-wrap gap-1">
+                          {[
+                            { label: "Raros", val: "Raros" },
+                            { label: "Rarríssimos", val: "Rarríssimos" },
+                            { label: "+ (1 cruz)", val: "+" },
+                            { label: "++ (2 cruzes)", val: "++" },
+                            { label: "+++ (3 cruzes)", val: "+++" },
+                            { label: "++++ (4 cruzes)", val: "++++" },
+                            { label: "Alguns", val: "Alguns" },
+                            { label: "Frequentes", val: "Frequentes" },
+                            { label: "Numerosos", val: "Numerosos" },
+                          ].map((qtd) => {
+                            const ativo =
+                              form.cristais.includes(`(${qtd.val})`) ||
+                              form.cristais.endsWith(` ${qtd.val}`) ||
+                              form.cristais.toLowerCase().includes(qtd.val.toLowerCase());
+                            return (
+                              <button
+                                key={qtd.val}
+                                type="button"
+                                onClick={() => {
+                                  let tipoBase = form.cristais.replace(/\s*\([^)]*\)|\s*:\s*.*|\s*\+{1,4}|\s+rar[a-z]+|\s+alguns|\s+frequentes|\s+numerosos/gi, "").trim();
+                                  if (!tipoBase || tipoBase === "Ausentes") tipoBase = "Oxalato de cálcio";
+                                  setForm({ ...form, cristais: `${tipoBase} (${qtd.val})` });
+                                }}
+                                className={`px-2 py-0.5 rounded-md text-[10.5px] font-bold border transition active:scale-95 ${
+                                  ativo
+                                    ? "bg-amber-500 text-white border-amber-600 shadow-xs"
+                                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                                }`}
+                              >
+                                {qtd.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="pt-1">
+                      <input
+                        type="text"
+                        value={form.cristais}
+                        onChange={(e) => setForm({ ...form, cristais: e.target.value })}
+                        placeholder="Texto livre de cristais..."
+                        className="w-full text-xs font-semibold px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-teal-600 text-slate-800"
+                      />
+                    </div>
                   </div>
 
                   <QuickChipSelect
@@ -2821,77 +2967,142 @@ export default function BancadaOperacionalPage() {
           {/* 3. BANCADA DE COAGULOGRAMA / TAP */}
           {bancadaAtiva === "coag" && (
             <section className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-3 mb-2.5 space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-slate-100 gap-1.5">
                 <div>
-                  <h2 className="text-xs font-black text-slate-900 uppercase">
-                    Coagulograma / TAP (TP & TTPA)
-                  </h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xs font-black text-slate-900 uppercase">
+                      Coagulograma / TAP (TP & TTPA)
+                    </h2>
+                    {pacienteInfo?.tem_tap && !pacienteInfo?.tem_ttpa && (
+                      <span className="text-[9.5px] bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.2 rounded font-black">
+                        📌 Só TAP Solicitado
+                      </span>
+                    )}
+                    {pacienteInfo?.tem_ttpa && !pacienteInfo?.tem_tap && (
+                      <span className="text-[9.5px] bg-purple-100 text-purple-900 border border-purple-300 px-1.5 py-0.2 rounded font-black">
+                        📌 Só TTPA Solicitado
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[10.5px] text-slate-500">
-                    Tempo de Atividade de Protrombina e INR
+                    Selecione o padrão solicitado para este paciente
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCoagTpTempo("12.0 seg");
-                    setCoagTpInr("1.00");
-                    setCoagTtpaTempo("31.0 seg");
-                    setCoagTtpaRelacao("1.00");
-                  }}
-                  className="text-[10.5px] font-bold text-sky-700 underline"
-                >
-                  Padrão Normal
-                </button>
+                <div className="flex items-center gap-1 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCoagTpTempo("12.0 seg");
+                      setCoagTpInr("1.00");
+                      setCoagTtpaTempo("");
+                      setCoagTtpaRelacao("");
+                    }}
+                    className="text-[10px] font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-lg active:scale-95 cursor-pointer"
+                  >
+                    + Só TAP
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCoagTpTempo("");
+                      setCoagTpInr("");
+                      setCoagTtpaTempo("30.0 seg");
+                      setCoagTtpaRelacao("1.00");
+                    }}
+                    className="text-[10px] font-bold text-purple-900 bg-purple-50 hover:bg-purple-100 border border-purple-300 px-2 py-0.5 rounded-lg active:scale-95 cursor-pointer"
+                  >
+                    + Só TTPA
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCoagTpTempo("12.0 seg");
+                      setCoagTpInr("1.00");
+                      setCoagTtpaTempo("30.0 seg");
+                      setCoagTtpaRelacao("1.00");
+                    }}
+                    className="text-[10px] font-bold text-sky-800 bg-sky-50 hover:bg-sky-100 border border-sky-300 px-2 py-0.5 rounded-lg active:scale-95 cursor-pointer"
+                  >
+                    + Completo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCoagTpTempo("");
+                      setCoagTpInr("");
+                      setCoagTtpaTempo("");
+                      setCoagTtpaRelacao("");
+                    }}
+                    className="text-[10px] font-bold text-slate-500 hover:text-slate-800 underline px-1 cursor-pointer"
+                  >
+                    Limpar
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2.5 text-xs">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1 text-[11px]">
-                    TP / TAP (Segundos)
-                  </label>
-                  <input
-                    type="text"
-                    value={coagTpTempo}
-                    onChange={(e) => setCoagTpTempo(e.target.value)}
-                    placeholder="Ex: 12.5 seg"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold"
-                  />
+                <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-black text-slate-600 uppercase block mb-1">
+                    Tempo de Protrombina (TAP / TP)
+                  </span>
+                  <div className="space-y-1.5">
+                    <div>
+                      <label className="block text-slate-700 font-bold text-[10.5px]">
+                        TP (Segundos)
+                      </label>
+                      <input
+                        type="text"
+                        value={coagTpTempo}
+                        onChange={(e) => setCoagTpTempo(e.target.value)}
+                        placeholder="Ex: 12.0 seg"
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-700 font-bold text-[10.5px]">
+                        INR (RNI)
+                      </label>
+                      <input
+                        type="text"
+                        value={coagTpInr}
+                        onChange={(e) => setCoagTpInr(e.target.value)}
+                        placeholder="Ex: 1.00"
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1 text-[11px]">
-                    INR (RNI)
-                  </label>
-                  <input
-                    type="text"
-                    value={coagTpInr}
-                    onChange={(e) => setCoagTpInr(e.target.value)}
-                    placeholder="Ex: 1.00"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1 text-[11px]">
-                    TTPA (Segundos)
-                  </label>
-                  <input
-                    type="text"
-                    value={coagTtpaTempo}
-                    onChange={(e) => setCoagTtpaTempo(e.target.value)}
-                    placeholder="Ex: 30.0 seg"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1 text-[11px]">
-                    TTPA (Relação)
-                  </label>
-                  <input
-                    type="text"
-                    value={coagTtpaRelacao}
-                    onChange={(e) => setCoagTtpaRelacao(e.target.value)}
-                    placeholder="Ex: 1.00"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold"
-                  />
+
+                <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-black text-slate-600 uppercase block mb-1">
+                    Tromboplastina (TTPA)
+                  </span>
+                  <div className="space-y-1.5">
+                    <div>
+                      <label className="block text-slate-700 font-bold text-[10.5px]">
+                        TTPA (Segundos)
+                      </label>
+                      <input
+                        type="text"
+                        value={coagTtpaTempo}
+                        onChange={(e) => setCoagTtpaTempo(e.target.value)}
+                        placeholder="Ex: 30.0 seg"
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-700 font-bold text-[10.5px]">
+                        TTPA (Relação)
+                      </label>
+                      <input
+                        type="text"
+                        value={coagTtpaRelacao}
+                        onChange={(e) => setCoagTtpaRelacao(e.target.value)}
+                        placeholder="Ex: 1.00"
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </section>

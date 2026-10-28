@@ -369,38 +369,54 @@ export const LaudoPrintView: React.FC<LaudoPrintViewProps> = ({
         </div>
       )}
 
-      {/* SEÇÃO 6: COAGULOGRAMA SE SOLICITADO */}
-      {(laudo.tem_coagulograma || laudo.tp_tempo || laudo.tp_inr || laudo.ttpa_tempo) && (
-        <div className="border border-slate-300 rounded overflow-hidden mb-4 avoid-break print:border-slate-800">
-          <div className="bg-slate-200 px-2.5 py-1 font-bold text-[11px] text-slate-800 border-b border-slate-300 uppercase print:bg-slate-100 flex items-center justify-between">
-            <span>Coagulograma de Bancada</span>
-            <span className="text-[9.5px] font-normal">Método: Coagulométrico / Manual de Banho-Maria</span>
-          </div>
-          <table className="w-full text-[10.5px]">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 text-[9px] uppercase">
-                <th className="py-1 px-2 text-left font-semibold">Parâmetro</th>
-                <th className="py-1 px-2 text-left font-semibold">Resultado</th>
-                <th className="py-1 px-2 text-right font-semibold">Valor de Referência</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              <tr>
-                <td className="py-1.5 px-2 font-medium">Tempo de Protrombina (TP / TAP)</td>
-                <td className="py-1.5 px-2 font-black text-slate-950">
-                  {laudo.tp_tempo || "12.0 seg"} {laudo.tp_inr ? `(INR: ${laudo.tp_inr})` : ""}
-                </td>
-                <td className="py-1.5 px-2 text-right text-slate-500">11.0 a 14.0 seg (INR: 0.8 a 1.2)</td>
-              </tr>
-              <tr>
-                <td className="py-1.5 px-2 font-medium">Tempo de Tromboplastina Parcial Ativada (TTPA)</td>
-                <td className="py-1.5 px-2 font-black text-slate-950">
-                  {laudo.ttpa_tempo || "30.0 seg"} {laudo.ttpa_relacao ? `(Relação: ${laudo.ttpa_relacao})` : ""}
-                </td>
-                <td className="py-1.5 px-2 text-right text-slate-500">25.0 a 35.0 seg (Relação: até 1.20)</td>
-              </tr>
-            </tbody>
-          </table>
+      {/* SEÇÃO 6: COAGULOGRAMA / TAP / TTPA SE SOLICITADO */}
+      {(() => {
+        const hasTp = Boolean(laudo.tem_tap || laudo.tp_tempo);
+        const hasTtpa = Boolean(laudo.tem_ttpa || laudo.ttpa_tempo);
+        const hasCoag = Boolean(laudo.tem_coagulograma || hasTp || hasTtpa);
+        if (!hasCoag) return null;
+
+        return (
+          <div className="border border-slate-300 rounded overflow-hidden mb-4 avoid-break print:border-slate-800">
+            <div className="bg-slate-200 px-2.5 py-1 font-bold text-[11px] text-slate-800 border-b border-slate-300 uppercase print:bg-slate-100 flex items-center justify-between">
+              <span>
+                {hasTp && !hasTtpa
+                  ? "Tempo de Atividade de Protrombina (TAP / TP)"
+                  : hasTtpa && !hasTp
+                  ? "Tempo de Tromboplastina Parcial Ativada (TTPA)"
+                  : "Coagulograma de Bancada (TAP & TTPA)"}
+              </span>
+              <span className="text-[9.5px] font-normal">Método: Coagulométrico / Manual de Banho-Maria</span>
+            </div>
+            <table className="w-full text-[10.5px]">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 text-[9px] uppercase">
+                  <th className="py-1 px-2 text-left font-semibold">Parâmetro</th>
+                  <th className="py-1 px-2 text-left font-semibold">Resultado</th>
+                  <th className="py-1 px-2 text-right font-semibold">Valor de Referência</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(hasTp || (!hasTp && !hasTtpa)) && (
+                  <tr>
+                    <td className="py-1.5 px-2 font-medium">Tempo de Protrombina (TP / TAP)</td>
+                    <td className="py-1.5 px-2 font-black text-slate-950">
+                      {laudo.tp_tempo || "12.0 seg"} {laudo.tp_inr ? `(INR: ${laudo.tp_inr})` : ""}
+                    </td>
+                    <td className="py-1.5 px-2 text-right text-slate-500">11.0 a 14.0 seg (INR: 0.8 a 1.2)</td>
+                  </tr>
+                )}
+                {(hasTtpa || (!hasTp && !hasTtpa)) && (
+                  <tr>
+                    <td className="py-1.5 px-2 font-medium">Tempo de Tromboplastina Parcial Ativada (TTPA)</td>
+                    <td className="py-1.5 px-2 font-black text-slate-950">
+                      {laudo.ttpa_tempo || "30.0 seg"} {laudo.ttpa_relacao ? `(Relação: ${laudo.ttpa_relacao})` : ""}
+                    </td>
+                    <td className="py-1.5 px-2 text-right text-slate-500">25.0 a 35.0 seg (Relação: até 1.20)</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           {laudo.coagulograma_repetido && (
             <div className="bg-amber-50 border-t border-amber-300 p-2 text-[10px] text-amber-950 font-bold flex items-center justify-between print:bg-slate-50 print:border-slate-400">
               <span className="flex items-center gap-1.5">
@@ -415,7 +431,8 @@ export const LaudoPrintView: React.FC<LaudoPrintViewProps> = ({
             </div>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {/* SEÇÃO 7: TESTE RÁPIDO DE PROTEINÚRIA (PRÉ-NATAL / GESTANTE) */}
       {(laudo.tem_proteinuria_rapida || laudo.resultado_proteinuria_rapida) && (

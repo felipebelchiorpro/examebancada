@@ -62,8 +62,10 @@ export interface LaudoUrina {
   tem_fr?: boolean;
   resultado_fr?: string; // "Negativo (< 8 UI/mL)" | "Positivo"
 
-  // 5. Coagulação (Coagulograma)
+  // 5. Coagulação (Coagulograma / TAP / TTPA)
   tem_coagulograma?: boolean;
+  tem_tap?: boolean;
+  tem_ttpa?: boolean;
   tp_tempo?: string; // ex: "12.0 seg"
   tp_atividade?: string; // ex: "98%"
   tp_inr?: string; // ex: "1.00"
@@ -110,6 +112,8 @@ export interface RotinaItem {
   tem_aslo?: boolean;
   tem_fr?: boolean;
   tem_coagulograma?: boolean;
+  tem_tap?: boolean;
+  tem_ttpa?: boolean;
   tem_abo_rh?: boolean;
   exames_bancada?: string[];
 }

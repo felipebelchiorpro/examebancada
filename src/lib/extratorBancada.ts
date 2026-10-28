@@ -76,6 +76,7 @@ export function classificarExameBancada(
     | "beta_hcg"
     | "abo_rh"
     | "outro_descartado";
+  subTipoCoag?: "tap" | "ttpa" | "ambos";
 } {
   const proc = normalizarTexto(procedimentoRaw);
   const ex = normalizarTexto(exameRaw);
@@ -174,22 +175,34 @@ export function classificarExameBancada(
   }
 
   // 4. COAGULOGRAMA / TAP / TP / TTPA
-  if (
-    combinado.includes("COAGULOGRAMA") ||
+  const ehTap =
     combinado.includes("PROTROMBINA") ||
+    /\bTAP\b/.test(ex) ||
+    /\bTP\b/.test(ex) ||
+    ex.includes("TEMPO DE ATIVIDADE DE PROTROMBINA");
+  const ehTtpa =
     combinado.includes("TROMBOPLASTINA") ||
-    ex === "TAP" ||
-    ex === "TP" ||
-    ex === "TTPA" ||
-    ex.includes("TEMPO DE ATIVIDADE DE PROTROMBINA")
-  ) {
-    const padrao = ex.includes("PROTROMBINA") || ex === "TAP" || ex === "TP"
-      ? "TEMPO DE ATIVIDADE DE PROTROMBINA (TAP)"
-      : "COAGULOGRAMA";
+    /\bTTPA\b/.test(ex) ||
+    /\bKTPA\b/.test(ex) ||
+    ex.includes("TEMPO DE TROMBOPLASTINA");
+  const ehCoagulogramaGeral = combinado.includes("COAGULOGRAMA");
+
+  if (ehTap || ehTtpa || ehCoagulogramaGeral) {
+    let subTipoCoag: "tap" | "ttpa" | "ambos" = "ambos";
+    let padrao = "COAGULOGRAMA";
+    if (ehTap && !ehTtpa && !ehCoagulogramaGeral) {
+      subTipoCoag = "tap";
+      padrao = "TEMPO DE ATIVIDADE DE PROTROMBINA (TAP)";
+    } else if (ehTtpa && !ehTap && !ehCoagulogramaGeral) {
+      subTipoCoag = "ttpa";
+      padrao = "TTPA (TEMPO DE TROMBOPLASTINA ATIVADA)";
+    }
+
     return {
       ehBancada: true,
       nomeExamePadronizado: padrao,
       categoria: "coagulograma",
+      subTipoCoag,
     };
   }
 
@@ -319,6 +332,8 @@ export function aplicarFlagsExamesNoItem(item: ItemRotina): ItemRotina {
   let tem_urina = Boolean(item.tem_urina);
   let tem_pso = Boolean(item.tem_pso);
   let tem_coagulograma = Boolean(item.tem_coagulograma);
+  let tem_tap = Boolean(item.tem_tap);
+  let tem_ttpa = Boolean(item.tem_ttpa);
   let tem_vdrl = Boolean(item.tem_vdrl);
   let tem_beta_hcg = Boolean(item.tem_beta_hcg);
   let tem_vhs = Boolean(item.tem_vhs);
@@ -333,7 +348,15 @@ export function aplicarFlagsExamesNoItem(item: ItemRotina): ItemRotina {
     if (c.categoria === "urina") tem_urina = true;
     if (c.categoria === "proteinuria_rapida") tem_proteinuria_rapida = true;
     if (c.categoria === "pso") tem_pso = true;
-    if (c.categoria === "coagulograma") tem_coagulograma = true;
+    if (c.categoria === "coagulograma") {
+      tem_coagulograma = true;
+      if (c.subTipoCoag === "tap") tem_tap = true;
+      else if (c.subTipoCoag === "ttpa") tem_ttpa = true;
+      else {
+        tem_tap = true;
+        tem_ttpa = true;
+      }
+    }
     if (c.categoria === "vdrl") tem_vdrl = true;
     if (c.categoria === "beta_hcg") tem_beta_hcg = true;
     if (c.categoria === "vhs") tem_vhs = true;
@@ -341,6 +364,12 @@ export function aplicarFlagsExamesNoItem(item: ItemRotina): ItemRotina {
     if (c.categoria === "aslo") tem_aslo = true;
     if (c.categoria === "fr") tem_fr = true;
     if (c.categoria === "abo_rh") tem_abo_rh = true;
+  }
+
+  // Se tem_coagulograma mas nenhum subtipo foi registrado, assume ambos
+  if (tem_coagulograma && !tem_tap && !tem_ttpa) {
+    tem_tap = true;
+    tem_ttpa = true;
   }
 
   // Se nenhum exame foi identificado explicitamente e nem tinha flags prévias, aí sim assume URINA I
@@ -369,6 +398,8 @@ export function aplicarFlagsExamesNoItem(item: ItemRotina): ItemRotina {
     tem_urina,
     tem_pso,
     tem_coagulograma,
+    tem_tap,
+    tem_ttpa,
     tem_vdrl,
     tem_beta_hcg,
     tem_vhs,
@@ -581,6 +612,8 @@ export function processarMatrizLinhasBancada(
           tem_urina: false,
           tem_pso: false,
           tem_coagulograma: false,
+          tem_tap: false,
+          tem_ttpa: false,
           tem_vdrl: false,
           tem_beta_hcg: false,
           tem_vhs: false,
@@ -601,8 +634,15 @@ export function processarMatrizLinhasBancada(
     if (classificacao.categoria === "proteinuria_rapida")
       registro.item.tem_proteinuria_rapida = true;
     if (classificacao.categoria === "pso") registro.item.tem_pso = true;
-    if (classificacao.categoria === "coagulograma")
+    if (classificacao.categoria === "coagulograma") {
       registro.item.tem_coagulograma = true;
+      if (classificacao.subTipoCoag === "tap") registro.item.tem_tap = true;
+      else if (classificacao.subTipoCoag === "ttpa") registro.item.tem_ttpa = true;
+      else {
+        registro.item.tem_tap = true;
+        registro.item.tem_ttpa = true;
+      }
+    }
     if (classificacao.categoria === "vdrl") registro.item.tem_vdrl = true;
     if (classificacao.categoria === "pcr") registro.item.tem_pcr = true;
     if (classificacao.categoria === "aslo") registro.item.tem_aslo = true;

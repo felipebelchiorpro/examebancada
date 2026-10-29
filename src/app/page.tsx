@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { QuickChipSelect } from "@/components/QuickChipSelect";
 import { LaudoUrina, ItemRotina, StatusLaudo } from "@/lib/googleSheets";
 import { formatarProntuario } from "@/lib/extratorBancada";
@@ -1060,6 +1061,7 @@ export default function BancadaOperacionalPage() {
       const matchExame =
         filtroTipoExame === "todos" ||
         (filtroTipoExame === "urina" && item.tem_urina) ||
+        (filtroTipoExame === "vdrl_sozinho" && item.tem_vdrl) ||
         (filtroTipoExame === "pso" && item.tem_pso) ||
         (filtroTipoExame === "abo" && item.tem_abo_rh) ||
         (filtroTipoExame === "vdrl" &&
@@ -1564,7 +1566,8 @@ export default function BancadaOperacionalPage() {
                   {[
                     { id: "todos", label: "Todos" },
                     { id: "urina", label: "🧪 Urina I" },
-                    { id: "vdrl", label: "🔬 Rápidos / Imuno" },
+                    { id: "vdrl_sozinho", label: "🔬 VDRL" },
+                    { id: "vdrl", label: "⚡ Rápidos / Imuno" },
                     { id: "abo", label: "🩸 ABO/Rh" },
                     { id: "pso", label: "💩 Sangue Oculto" },
                     { id: "coag", label: "⏱️ Coagulograma" },

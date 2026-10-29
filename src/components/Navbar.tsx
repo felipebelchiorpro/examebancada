@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/Logo";
 import {
-  FlaskConical,
+  FlaskConical, Package,
   FileSpreadsheet,
   Printer,
   History,
@@ -57,6 +57,7 @@ export const Navbar: React.FC = () => {
   const navLinks = [
     { href: "/", label: "Tiragem do Dia", icon: Printer },
     { href: "/importar", label: "Importar Conecta SUS", icon: FileSpreadsheet },
+    { href: "/vdrl", label: "Lote VDRL", icon: Package },
     { href: "/laudos", label: "Relatórios & Canhotos", icon: FlaskConical },
     { href: "/consulta", label: "Histórico", icon: History },
     { href: "/configuracoes", label: "Conexão", icon: Settings },
@@ -66,6 +67,7 @@ export const Navbar: React.FC = () => {
   const mobileBancadas = [
     { id: "urina", href: "/?bancada=urina", label: "Urina I", icon: FlaskConical },
     { id: "imuno", href: "/?bancada=imuno", label: "Rápidos/Imuno", icon: Sparkles },
+    { id: "vdrl", href: "/vdrl", label: "Lote VDRL", icon: Package },
     { id: "coag", href: "/?bancada=coag", label: "Coag/TAP", icon: History },
     { id: "pso", href: "/?bancada=pso", label: "Sangue Oculto", icon: FileSpreadsheet },
   ];
@@ -152,7 +154,7 @@ export const Navbar: React.FC = () => {
 
       {/* Bottom Nav Mobile (Exclusivo para Contagem no Telefone) */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 md:hidden print:hidden px-1.5 py-1 shadow-lg">
-        <div className="grid grid-cols-4 gap-1">
+        <div className="grid grid-cols-5 gap-1">
           {mobileBancadas.map((b) => {
             const Icon = b.icon;
             const isSelected = pathname === "/" && bancadaAtual === b.id;

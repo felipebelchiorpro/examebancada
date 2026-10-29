@@ -705,3 +705,34 @@ export function extrairExamesBancadaConectaSUS(
     pacientesUnificados,
   };
 }
+
+
+export interface ResultadoProcessamentoBancada extends ResultadoExtracaoBancada {
+  setorUrinalise: ItemRotina[];
+  setorPso: ItemRotina[];
+  setorCoagulograma: ItemRotina[];
+  setorVdrl: ItemRotina[];
+  setorTestesRapidos: ItemRotina[];
+  setorProvasInflamatorias: ItemRotina[];
+}
+
+/**
+ * Função compatível com as telas de importação e rotas de extração de arquivos
+ */
+export function processarMatrizLinhasBancada(
+  rows: any[][],
+  filtrarApenasRealizado: boolean = false
+): ResultadoProcessamentoBancada {
+  const extracao = extrairExamesBancadaConectaSUS(rows, filtrarApenasRealizado);
+  const pacientes = extracao.pacientesUnificados;
+
+  return {
+    ...extracao,
+    setorUrinalise: pacientes.filter((p) => p.tem_urina || p.tem_proteinuria_rapida),
+    setorPso: pacientes.filter((p) => p.tem_pso),
+    setorCoagulograma: pacientes.filter((p) => p.tem_coagulograma),
+    setorVdrl: pacientes.filter((p) => p.tem_vdrl),
+    setorTestesRapidos: pacientes.filter((p) => p.tem_beta_hcg || p.tem_dengue),
+    setorProvasInflamatorias: pacientes.filter((p) => p.tem_vhs || p.tem_pcr || p.tem_aslo || p.tem_fr),
+  };
+}

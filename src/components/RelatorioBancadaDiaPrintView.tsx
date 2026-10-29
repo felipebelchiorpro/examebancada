@@ -134,6 +134,7 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
             const hasPcr = Boolean(l.tem_pcr || l.resultado_pcr);
             const hasAslo = Boolean(l.tem_aslo || l.resultado_aslo);
             const hasFr = Boolean(l.tem_fr || l.resultado_fr);
+            const hasDengue = Boolean(l.tem_dengue || l.resultado_dengue);
 
             return (
               <div
@@ -203,6 +204,10 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                       <span className="font-black text-black">B:</span>
                       <span className="font-sans font-semibold text-slate-900">{l.bacterias || "Ausentes"}</span>
                     </div>
+                    <div className="flex justify-between border-b border-dotted border-slate-300 pb-0.5">
+                      <span className="font-black text-black">MUCO:</span>
+                      <span className="font-sans font-semibold text-slate-900">{l.muco || "Ausentes"}</span>
+                    </div>
                     <div className="flex justify-between pb-0.5">
                       <span className="font-black text-black">CRISTAIS:</span>
                       <span className="font-sans font-semibold text-slate-900">{l.cristais || "Ausentes"}</span>
@@ -220,7 +225,17 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                     {hasVdrl && (
                       <div className="p-2 border border-purple-400 bg-purple-50 rounded">
                         <span className="text-[9px] font-black uppercase text-purple-950 block">VDRL (Sífilis)</span>
-                        <span className="text-xs font-black text-purple-900">{l.resultado_vdrl || "Não Reagente"}</span>
+                        <span className="text-xs font-black text-purple-900">
+                          {l.vdrl_acumular_lote || l.resultado_vdrl === "Aguardando lote semanal"
+                            ? "Aguardando lote semanal (acumulado)"
+                            : l.resultado_vdrl || "Não Reagente"}
+                        </span>
+                      </div>
+                    )}
+                    {hasDengue && (
+                      <div className="p-2 border border-emerald-400 bg-emerald-50 rounded">
+                        <span className="text-[9px] font-black uppercase text-emerald-950 block">Dengue (Teste Rápido)</span>
+                        <span className="text-xs font-black text-emerald-900">{l.resultado_dengue || "Não Reagente"}</span>
                       </div>
                     )}
                     {hasAbo && (
@@ -289,8 +304,8 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                   </div>
                 )}
 
-                {/* EXAMES ADICIONAIS DE QUEM TEM URINA + OUTRO EXAME (EX: MARCELA -> URINA + PROTEINÚRIA) */}
-                {hasUrina && (hasVdrl || hasAbo || hasPso || hasBeta || hasCoag || hasProt || hasVhs || hasPcr) && (
+                {/* EXAMES ADICIONAIS DE QUEM TEM URINA + OUTRO EXAME */}
+                {hasUrina && (hasVdrl || hasAbo || hasPso || hasBeta || hasCoag || hasProt || hasVhs || hasPcr || hasDengue) && (
                   <div className="mt-1 pt-1 border-t-2 border-black text-[8.5px] font-mono leading-tight space-y-0.5 bg-slate-50 p-1 rounded">
                     {hasProt && (
                       <div className="font-bold">PROTEINÚRIA: {l.resultado_proteinuria_rapida || "Negativo"}</div>
@@ -299,7 +314,12 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                       <div className="font-bold">ABO/Rh: {l.resultado_abo_rh || "O Pos (+)"}</div>
                     )}
                     {hasVdrl && (
-                      <div className="font-bold">VDRL: {l.resultado_vdrl || "Não Reagente"}</div>
+                      <div className="font-bold">
+                        VDRL: {l.vdrl_acumular_lote || l.resultado_vdrl === "Aguardando lote semanal" ? "Aguardando lote semanal (acumulado)" : l.resultado_vdrl || "Não Reagente"}
+                      </div>
+                    )}
+                    {hasDengue && (
+                      <div className="font-bold">DENGUE: {l.resultado_dengue || "Não Reagente"}</div>
                     )}
                     {hasPso && (
                       <div className="font-bold">PSO: {l.resultado_pso || "Negativo"}</div>
@@ -349,6 +369,7 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
             const hasPcr = Boolean(l.tem_pcr || l.resultado_pcr);
             const hasAslo = Boolean(l.tem_aslo || l.resultado_aslo);
             const hasFr = Boolean(l.tem_fr || l.resultado_fr);
+            const hasDengue = Boolean(l.tem_dengue || l.resultado_dengue);
 
             return (
               <div
@@ -414,6 +435,11 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                         BETA-HCG
                       </span>
                     )}
+                    {hasDengue && (
+                      <span className="text-[8.5px] bg-emerald-100 text-emerald-900 px-1.5 py-0.2 rounded font-black border border-emerald-300">
+                        DENGUE
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -440,11 +466,12 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                           <div><b>Prot:</b> {l.proteina || "Negativo"}</div>
                           <div><b>Glic:</b> {l.glicose || "Negativo"}</div>
                         </div>
-                        <div className="border-t border-slate-200 mt-1 pt-1 grid grid-cols-6 gap-1 text-[9px] font-mono">
+                        <div className="border-t border-slate-200 mt-1 pt-1 grid grid-cols-7 gap-1 text-[9px] font-mono">
                           <div><b>Cél:</b> {l.celulas_epiteliais || "Raras"}</div>
                           <div><b>Leu:</b> {l.leucocitos_campo || "0-4 p/c"}</div>
                           <div><b>Hem:</b> {l.hemacias_campo || "0-2 p/c"}</div>
                           <div><b>Bact:</b> {l.bacterias || "Ausentes"}</div>
+                          <div><b>Muco:</b> {l.muco || "Ausentes"}</div>
                           <div><b>Cristais:</b> {l.cristais || "Ausentes"}</div>
                           <div><b>Cilindros:</b> {l.cilindros || "Ausentes"}</div>
                         </div>
@@ -604,7 +631,10 @@ export const RelatorioBancadaDiaPrintView: React.FC<RelatorioBancadaDiaPrintView
                       </span>
                     ) : (
                       [
-                        l.resultado_vdrl ? `VDRL: ${l.resultado_vdrl}` : null,
+                        l.resultado_vdrl
+                          ? `VDRL: ${l.vdrl_acumular_lote || l.resultado_vdrl === "Aguardando lote semanal" ? "Aguardando lote semanal (acumulado)" : l.resultado_vdrl}`
+                          : null,
+                        l.resultado_dengue ? `Dengue: ${l.resultado_dengue}` : null,
                         l.resultado_abo_rh ? `ABO/Rh: ${l.resultado_abo_rh}` : null,
                         l.resultado_proteinuria_rapida ? `Prot. Rápida: ${l.resultado_proteinuria_rapida}` : null,
                         l.resultado_pso ? `PSO: ${l.resultado_pso}` : null,

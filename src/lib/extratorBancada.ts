@@ -1,4 +1,5 @@
 import { RotinaItem } from "@/types/urinalise";
+
 export type ItemRotina = RotinaItem;
 
 export interface LinhaColetaBruta {
@@ -54,7 +55,7 @@ export function formatarProntuario(valor: any): string {
 
 /**
  * Identifica se um procedimento/exame do Conecta SUS pertence à BANCADA MANUAL
- * (Urina I, Proteinúria Tira, Sangue Oculto/PSO, Coagulograma/TP/TTPA, VDRL, PCR, ASLO, FR, VHS, Beta-HCG, Tipagem ABO/Rh)
+ * (Urina I, Proteinúria Tira, Sangue Oculto/PSO, Coagulograma/TP/TTPA, VDRL, PCR, ASLO, FR, VHS, Beta-HCG, Tipagem ABO/Rh, Dengue Rápido)
  * e descarta automaticamente os exames de Bioquímica/Hematologia/Hormônios/Sorologias automatizadas.
  */
 export function classificarExameBancada(
@@ -75,6 +76,7 @@ export function classificarExameBancada(
     | "vhs"
     | "beta_hcg"
     | "abo_rh"
+    | "dengue"
     | "outro_descartado";
   subTipoCoag?: "tap" | "ttpa" | "ambos";
 } {
@@ -180,16 +182,19 @@ export function classificarExameBancada(
     /\bTAP\b/.test(ex) ||
     /\bTP\b/.test(ex) ||
     ex.includes("TEMPO DE ATIVIDADE DE PROTROMBINA");
+
   const ehTtpa =
     combinado.includes("TROMBOPLASTINA") ||
     /\bTTPA\b/.test(ex) ||
     /\bKTPA\b/.test(ex) ||
     ex.includes("TEMPO DE TROMBOPLASTINA");
+
   const ehCoagulogramaGeral = combinado.includes("COAGULOGRAMA");
 
   if (ehTap || ehTtpa || ehCoagulogramaGeral) {
     let subTipoCoag: "tap" | "ttpa" | "ambos" = "ambos";
     let padrao = "COAGULOGRAMA";
+
     if (ehTap && !ehTtpa && !ehCoagulogramaGeral) {
       subTipoCoag = "tap";
       padrao = "TEMPO DE ATIVIDADE DE PROTROMBINA (TAP)";
@@ -312,6 +317,20 @@ export function classificarExameBancada(
     };
   }
 
+  // 12. TESTE RÁPIDO DENGUE (NS1 / IgG / IgM)
+  if (
+    combinado.includes("DENGUE") ||
+    combinado.includes("NS1") ||
+    combinado.includes("TESTE RAPIDO DENGUE") ||
+    combinado.includes("SOROLOGIA DENGUE")
+  ) {
+    return {
+      ehBancada: true,
+      nomeExamePadronizado: "TESTE RÁPIDO DENGUE (NS1 / IgG / IgM)",
+      categoria: "dengue",
+    };
+  }
+
   return {
     ehBancada: false,
     nomeExamePadronizado: exameRaw.trim() || procedimentoRaw.trim(),
@@ -320,7 +339,7 @@ export function classificarExameBancada(
 }
 
 /**
- * Reconstrói as flags booleanas (tem_urina, tem_pso, tem_abo_rh, etc.) a partir da string de exames
+ * Reconstrói as flags booleanas (tem_urina, tem_pso, tem_abo_rh, tem_dengue, etc.) a partir da string de exames
  * salva no Google Sheets ou em memória.
  */
 export function aplicarFlagsExamesNoItem(item: ItemRotina): ItemRotina {
@@ -335,6 +354,7 @@ export function aplicarFlagsExamesNoItem(item: ItemRotina): ItemRotina {
   let tem_tap = Boolean(item.tem_tap);
   let tem_ttpa = Boolean(item.tem_ttpa);
   let tem_vdrl = Boolean(item.tem_vdrl);
+  let tem_dengue = Boolean(item.tem_dengue);
   let tem_beta_hcg = Boolean(item.tem_beta_hcg);
   let tem_vhs = Boolean(item.tem_vhs);
   let tem_pcr = Boolean(item.tem_pcr);
@@ -358,6 +378,7 @@ export function aplicarFlagsExamesNoItem(item: ItemRotina): ItemRotina {
       }
     }
     if (c.categoria === "vdrl") tem_vdrl = true;
+    if (c.categoria === "dengue") tem_dengue = true;
     if (c.categoria === "beta_hcg") tem_beta_hcg = true;
     if (c.categoria === "vhs") tem_vhs = true;
     if (c.categoria === "pcr") tem_pcr = true;
@@ -377,6 +398,7 @@ export function aplicarFlagsExamesNoItem(item: ItemRotina): ItemRotina {
     tem_pso ||
     tem_coagulograma ||
     tem_vdrl ||
+    tem_dengue ||
     tem_beta_hcg ||
     tem_vhs ||
     tem_pcr ||
@@ -401,6 +423,7 @@ export function aplicarFlagsExamesNoItem(item: ItemRotina): ItemRotina {
     tem_tap,
     tem_ttpa,
     tem_vdrl,
+    tem_dengue,
     tem_beta_hcg,
     tem_vhs,
     tem_pcr,
@@ -412,16 +435,30 @@ export function aplicarFlagsExamesNoItem(item: ItemRotina): ItemRotina {
 }
 
 /**
- * Processa uma matriz de linhas (vinda de CSV, XLSX ou texto colado) do relatório Conecta SUS
- * ou de uma planilha de Bancada já formatada (`Exame,Paciente,Prontuário,Resultado`),
- * e gera tanto a lista da Tiragem (`Bancada 15/10`) quanto os pacientes unificados para o app,
- * ordenados alfabeticamente por nome para que a ordem da Urina (1, 2, 3, 4, 5, 6...) seja idêntica
- * na folha impressa e no celular.
+ * Lê uma planilha bruta extraída do Conecta SUS (em qualquer formato: TSV, CSV, XLS ou colunas avulsas)
+ * e gera as 2 estruturas vitais para o Laboratório:
+ * 1. Linhas Relatório de Bancada ("Tiragem 15/10"): Exame | Paciente | Prontuário | Resultado
+ * 2. Pacientes Unificados: Fila do celular do técnico com botões de cada exame.
  */
-export function processarMatrizLinhasBancada(
+export function extrairExamesBancadaConectaSUS(
   rows: any[][],
   filtrarApenasRealizado: boolean = false
 ): ResultadoExtracaoBancada {
+  if (!rows || rows.length === 0) {
+    return {
+      dataReferencia: new Date().toISOString().split("T")[0],
+      totalLinhasBrutas: 0,
+      totalExamesBancada: 0,
+      totalDescartadosBioquimica: 0,
+      totalLidos: 0,
+      totalAproveitados: 0,
+      totalDescartadosAutomatizados: 0,
+      linhasRelatorioBancada: [],
+      pacientesUnificados: [],
+    };
+  }
+
+  // Detectar dinamicamente a linha de cabeçalho e as posições de cada coluna
   let idxData = -1;
   let idxNome = -1;
   let idxPront = -1;
@@ -430,18 +467,9 @@ export function processarMatrizLinhasBancada(
   let idxStatus = -1;
   let linhaCabecalho = -1;
 
-  // 1. Localizar a linha real de cabeçalho da tabela (ignorando linhas de filtro com ":" como "Período:,Exame:" ou "Paciente:,Prontuário:")
-  for (let r = 0; r < Math.min(rows.length, 30); r++) {
-    const rawCells = (rows[r] || []).map((c: any) => String(c ?? "").trim());
-    const normCells = rawCells.map((c) => normalizarTexto(c));
-
-    // Ignorar linhas de metadados onde as células terminam com ":" (ex: "Período:", "Exame:", "Paciente:", "Prontuário:")
-    const célulasNãoVazias = rawCells.filter(Boolean);
-    if (célulasNãoVazias.length === 0) continue;
-    const qtdComDoisPontos = célulasNãoVazias.filter((c) => c.endsWith(":")).length;
-    if (qtdComDoisPontos >= 1 && célulasNãoVazias.length <= 4) {
-      continue;
-    }
+  for (let r = 0; r < Math.min(10, rows.length); r++) {
+    const rawCells = rows[r] || [];
+    const normCells = rawCells.map((c) => normalizarTexto(String(c ?? "")));
 
     const posPaciente = normCells.findIndex(
       (h) =>
@@ -491,7 +519,6 @@ export function processarMatrizLinhasBancada(
   let totalLinhasBrutas = 0;
   let totalExamesBancada = 0;
   let totalDescartadosBioquimica = 0;
-
   const linhasRelatorioBancada: LinhaRelatorioBancada[] = [];
   const mapaPacientes = new Map<
     string,
@@ -564,14 +591,12 @@ export function processarMatrizLinhasBancada(
     totalLinhasBrutas++;
 
     const classificacao = classificarExameBancada(procRaw, exameRaw);
-
     if (!classificacao.ehBancada) {
       totalDescartadosBioquimica++;
       continue;
     }
 
     totalExamesBancada++;
-
     const prontuarioFinal = prontRaw || `S/P-${totalExamesBancada}`;
     const nomePacienteLimpo = nomeRaw.toUpperCase().trim();
 
@@ -582,7 +607,6 @@ export function processarMatrizLinhasBancada(
         l.paciente === nomePacienteLimpo &&
         l.exame === classificacao.nomeExamePadronizado
     );
-
     if (!jaTemLinhaExame) {
       linhasRelatorioBancada.push({
         exame: classificacao.nomeExamePadronizado,
@@ -594,7 +618,6 @@ export function processarMatrizLinhasBancada(
 
     // Unificar paciente para o app de bancada (1 registro por paciente com todas as flags dos seus exames)
     const chavePaciente = `${prontuarioFinal}_${nomePacienteLimpo}`;
-
     if (!mapaPacientes.has(chavePaciente)) {
       mapaPacientes.set(chavePaciente, {
         item: {
@@ -615,6 +638,7 @@ export function processarMatrizLinhasBancada(
           tem_tap: false,
           tem_ttpa: false,
           tem_vdrl: false,
+          tem_dengue: false,
           tem_beta_hcg: false,
           tem_vhs: false,
           tem_pcr: false,
@@ -644,6 +668,7 @@ export function processarMatrizLinhasBancada(
       }
     }
     if (classificacao.categoria === "vdrl") registro.item.tem_vdrl = true;
+    if (classificacao.categoria === "dengue") registro.item.tem_dengue = true;
     if (classificacao.categoria === "pcr") registro.item.tem_pcr = true;
     if (classificacao.categoria === "aslo") registro.item.tem_aslo = true;
     if (classificacao.categoria === "fr") registro.item.tem_fr = true;

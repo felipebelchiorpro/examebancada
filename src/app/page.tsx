@@ -19,7 +19,7 @@ import {
   Check,
   Scan,
   UploadCloud,
-  Printer,
+  Printer, Package, Layers,
   FileSpreadsheet,
   Smartphone,
   Clock,
@@ -47,7 +47,7 @@ const VALORES_PADRAO_NORMAL = {
   leucocitos_campo: "4.000 /mL",
   hemacias_campo: "1.000 /mL",
   bacterias: "fb",
-  muco: "Ausente",
+  muco: "Ausentes",
   cristais: "Ausentes",
   cilindros: "Ausentes",
   outros_elementos: "Ausentes",
@@ -114,9 +114,9 @@ export default function BancadaOperacionalPage() {
   const [mostrarSugestoes, setMostrarSugestoes] = useState<boolean>(false);
 
   // Seleção Rápida de Bancada Ativa no Celular
-  const [bancadaAtiva, setBancadaAtiva] = useState<"urina" | "imuno" | "coag" | "pso">("urina");
+  const [bancadaAtiva, setBancadaAtiva] = useState<"urina" | "imuno" | "coag" | "pso" | "vdrl_lote">("urina");
   const [subFiltroImuno, setSubFiltroImuno] = useState<
-    "todos" | "vdrl" | "abo" | "proteinuria" | "beta_hcg" | "provas" | "vhs"
+    "todos" | "vdrl" | "abo" | "proteinuria" | "beta_hcg" | "provas" | "vhs" | "dengue"
   >("todos");
   const [mostrarAdicionarExames, setMostrarAdicionarExames] = useState<boolean>(false);
 
@@ -162,6 +162,14 @@ export default function BancadaOperacionalPage() {
   // Teste Rápido de Proteinúria (Gestantes / Rastreio de Pré-Eclâmpsia)
   const [temProteinuriaRapida, setTemProteinuriaRapida] = useState<boolean>(false);
   const [resultadoProteinuriaRapida, setResultadoProteinuriaRapida] = useState<string>("Negativo");
+
+  // Teste Rápido de Dengue (NS1 / IgG / IgM)
+  const [temDengue, setTemDengue] = useState<boolean>(false);
+  const [resultadoDengue, setResultadoDengue] = useState<string>("Não Reagente (NS1 / IgG / IgM)");
+
+  // Controle de Resultados da Aba de VDRL em Lote
+  const [vdrlLoteResultados, setVdrlLoteResultados] = useState<Record<string, string>>({});
+  const [isSalvandoLote, setIsSalvandoLote] = useState<boolean>(false);
 
   // Estados de UI e Feedback
   const [isSearching, setIsSearching] = useState<boolean>(false);
@@ -421,6 +429,12 @@ export default function BancadaOperacionalPage() {
           laudoSalvo?.resultado_fr
       )
     );
+    setTemDengue(
+      Boolean(pac.tem_dengue || laudoSalvo?.tem_dengue || laudoSalvo?.resultado_dengue)
+    );
+    if (laudoSalvo?.vdrl_acumular_lote !== undefined) {
+      setVdrlAcumularLote(Boolean(laudoSalvo.vdrl_acumular_lote || laudoSalvo.resultado_vdrl === "Aguardando lote semanal"));
+    }
     setTemProteinuriaRapida(
       Boolean(pac.tem_proteinuria_rapida || laudoSalvo?.resultado_proteinuria_rapida)
     );
@@ -472,6 +486,9 @@ export default function BancadaOperacionalPage() {
       if (laudoSalvo.resultado_proteinuria_rapida) {
         setResultadoProteinuriaRapida(laudoSalvo.resultado_proteinuria_rapida);
       }
+      if (laudoSalvo.resultado_dengue) {
+        setResultadoDengue(laudoSalvo.resultado_dengue);
+      }
     } else {
       setForm({ ...VALORES_PADRAO_NORMAL, observacoes: "" });
       setResultadoPso("Negativo");
@@ -492,6 +509,7 @@ export default function BancadaOperacionalPage() {
       setCoagTtpaRelacao(pacSoTap ? "" : "1.00");
       setCoagRepetido(false);
       setResultadoProteinuriaRapida("Negativo");
+      setResultadoDengue("Não Reagente (NS1 / IgG / IgM)");
     }
   };
 
@@ -544,6 +562,7 @@ export default function BancadaOperacionalPage() {
       const imunoPacientes = ordenada.filter((p) =>
         Boolean(
           p.tem_vdrl ||
+            p.tem_dengue ||
             p.tem_beta_hcg ||
             p.tem_vhs ||
             p.tem_pcr ||
@@ -554,6 +573,7 @@ export default function BancadaOperacionalPage() {
         )
       );
       if (subFiltroImuno === "vdrl") return imunoPacientes.filter((p) => Boolean(p.tem_vdrl));
+      if (subFiltroImuno === "dengue") return imunoPacientes.filter((p) => Boolean(p.tem_dengue));
       if (subFiltroImuno === "abo") return imunoPacientes.filter((p) => Boolean(p.tem_abo_rh));
       if (subFiltroImuno === "proteinuria")
         return imunoPacientes.filter((p) => Boolean(p.tem_proteinuria_rapida));
@@ -718,7 +738,10 @@ export default function BancadaOperacionalPage() {
         tem_abo_rh: temAboRh,
         resultado_abo_rh: temAboRh ? resultadoAboRh : "",
         tem_vdrl: temVdrl,
-        resultado_vdrl: temVdrl ? resultadoVdrl : "",
+        resultado_vdrl: temVdrl ? (vdrlAcumularLote ? "Aguardando lote semanal" : resultadoVdrl) : "",
+        vdrl_acumular_lote: Boolean(temVdrl && vdrlAcumularLote),
+        tem_dengue: temDengue,
+        resultado_dengue: temDengue ? resultadoDengue : "",
         tem_pcr: Boolean(pacienteInfo?.tem_pcr || (temProvasInflamatorias && resultadoPcr)),
         resultado_pcr: temProvasInflamatorias ? resultadoPcr : "",
         tem_aslo: Boolean(pacienteInfo?.tem_aslo || (temProvasInflamatorias && resultadoAslo)),
@@ -807,6 +830,143 @@ export default function BancadaOperacionalPage() {
         ? `${prev.observacoes.trim()}; ${frase}`
         : frase,
     }));
+  };
+
+  // Lista de pacientes com VDRL pendentes ou acumulados no lote
+  const listaVdrlLote = React.useMemo(() => {
+    return rotinaDia.filter((p) => {
+      if (!p.tem_vdrl) return false;
+      const l = laudosDia.find(
+        (la) => formatarProntuario(la.prontuario) === formatarProntuario(p.prontuario)
+      );
+      if (!l) return true; // Ainda não realizado
+      return Boolean(
+        l.vdrl_acumular_lote ||
+        l.resultado_vdrl === "Aguardando lote semanal" ||
+        l.status !== "finalizado"
+      );
+    });
+  }, [rotinaDia, laudosDia]);
+
+  const definirTodosVdrlNaoReagente = () => {
+    const novos: Record<string, string> = { ...vdrlLoteResultados };
+    listaVdrlLote.forEach((p) => {
+      novos[formatarProntuario(p.prontuario)] = "Não Reagente";
+    });
+    setVdrlLoteResultados(novos);
+    mostrarNotificacao(
+      listaVdrlLote.length + " exames de VDRL definidos como 'Não Reagente'. Clique em Salvar Todo o Lote para confirmar.",
+      "success"
+    );
+  };
+
+  const salvarTodoLoteVdrl = async () => {
+    if (listaVdrlLote.length === 0) {
+      mostrarNotificacao("Nenhum VDRL pendente no lote para salvar.", "warning");
+      return;
+    }
+    setIsSalvandoLote(true);
+    try {
+      let sucessos = 0;
+      for (const pac of listaVdrlLote) {
+        const pront = formatarProntuario(pac.prontuario);
+        const resVdrl = vdrlLoteResultados[pront] || "Não Reagente";
+        const laudoExistente = laudosDia.find(
+          (l) => formatarProntuario(l.prontuario) === pront
+        );
+
+        const payload: Partial<LaudoUrina> = {
+          ...(laudoExistente || VALORES_PADRAO_NORMAL),
+          prontuario: pront,
+          nome_paciente: pac.nome_paciente,
+          idade_sexo: pac.idade_sexo || "SUS",
+          posto_unidade: pac.posto_unidade || "Conecta SUS",
+          solicitante: pac.solicitante || "Conecta SUS",
+          status: "finalizado",
+          tem_vdrl: true,
+          resultado_vdrl: resVdrl,
+          vdrl_acumular_lote: false,
+        };
+
+        const res = await fetch("/api/laudos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (data.ok && data.laudo) {
+          sucessos++;
+          setLaudosDia((prev) => {
+            const idx = prev.findIndex(
+              (l) => formatarProntuario(l.prontuario) === pront
+            );
+            if (idx >= 0) {
+              const copia = [...prev];
+              copia[idx] = data.laudo;
+              return copia;
+            }
+            return [data.laudo, ...prev];
+          });
+        }
+      }
+      carregarDadosSincronizados(true);
+      mostrarNotificacao(
+        "Lote concluído com sucesso! " + sucessos + " laudos de VDRL foram salvos e liberados.",
+        "success"
+      );
+    } catch (err: any) {
+      console.error("Erro ao salvar lote de VDRL:", err);
+      mostrarNotificacao("Erro ao salvar lote de VDRL: " + err.message, "error");
+    } finally {
+      setIsSalvandoLote(false);
+    }
+  };
+
+  const salvarIndividualLoteVdrl = async (pac: ItemRotina) => {
+    const pront = formatarProntuario(pac.prontuario);
+    const resVdrl = vdrlLoteResultados[pront] || "Não Reagente";
+    const laudoExistente = laudosDia.find(
+      (l) => formatarProntuario(l.prontuario) === pront
+    );
+
+    try {
+      const payload: Partial<LaudoUrina> = {
+        ...(laudoExistente || VALORES_PADRAO_NORMAL),
+        prontuario: pront,
+        nome_paciente: pac.nome_paciente,
+        idade_sexo: pac.idade_sexo || "SUS",
+        posto_unidade: pac.posto_unidade || "Conecta SUS",
+        solicitante: pac.solicitante || "Conecta SUS",
+        status: "finalizado",
+        tem_vdrl: true,
+        resultado_vdrl: resVdrl,
+        vdrl_acumular_lote: false,
+      };
+
+      const res = await fetch("/api/laudos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.ok && data.laudo) {
+        setLaudosDia((prev) => {
+          const idx = prev.findIndex(
+            (l) => formatarProntuario(l.prontuario) === pront
+          );
+          if (idx >= 0) {
+            const copia = [...prev];
+            copia[idx] = data.laudo;
+            return copia;
+          }
+          return [data.laudo, ...prev];
+        });
+        carregarDadosSincronizados(true);
+        mostrarNotificacao("VDRL de " + pac.nome_paciente.split(" ")[0] + " salvo como " + resVdrl + "!", "success");
+      }
+    } catch (err: any) {
+      mostrarNotificacao("Erro ao salvar VDRL: " + err.message, "error");
+    }
   };
 
   // Monta a relação oficial e completa de laudos para o Relatório do Dia / Canhotos recortáveis
@@ -949,6 +1109,7 @@ export default function BancadaOperacionalPage() {
       imuno: rotinaDoDia.filter((p) =>
         Boolean(
           p.tem_vdrl ||
+            p.tem_dengue ||
             p.tem_beta_hcg ||
             p.tem_vhs ||
             p.tem_pcr ||
@@ -961,13 +1122,26 @@ export default function BancadaOperacionalPage() {
       coag: rotinaDoDia.filter((p) => Boolean(p.tem_coagulograma)).length,
       pso: rotinaDoDia.filter((p) => Boolean(p.tem_pso)).length,
       vdrl: rotinaDoDia.filter((p) => Boolean(p.tem_vdrl)).length,
+      dengue: rotinaDoDia.filter((p) => Boolean(p.tem_dengue)).length,
       abo: rotinaDoDia.filter((p) => Boolean(p.tem_abo_rh)).length,
       proteinuria: rotinaDoDia.filter((p) => Boolean(p.tem_proteinuria_rapida)).length,
       beta_hcg: rotinaDoDia.filter((p) => Boolean(p.tem_beta_hcg)).length,
       provas: rotinaDoDia.filter((p) => Boolean(p.tem_pcr || p.tem_aslo || p.tem_fr)).length,
       vhs: rotinaDoDia.filter((p) => Boolean(p.tem_vhs)).length,
+      vdrlLote: rotinaDia.filter((p) => {
+        if (!p.tem_vdrl) return false;
+        const l = laudosDia.find(
+          (la) => formatarProntuario(la.prontuario) === formatarProntuario(p.prontuario)
+        );
+        if (!l) return true;
+        return Boolean(
+          l.vdrl_acumular_lote ||
+          l.resultado_vdrl === "Aguardando lote semanal" ||
+          l.status !== "finalizado"
+        );
+      }).length,
     };
-  }, [rotinaDoDia]);
+  }, [rotinaDoDia, rotinaDia, laudosDia]);
 
   return (
     <div className="min-h-screen bg-slate-100/80 pb-28 md:pb-12">
@@ -1706,7 +1880,7 @@ export default function BancadaOperacionalPage() {
           </div>
 
           {/* ABAS DE SETOR COMPACTAS PARA TELAS PEQUENAS COM CONTAGENS EM TEMPO REAL */}
-          <div className="grid grid-cols-4 gap-1.5 mb-2">
+          <div className="grid grid-cols-5 gap-1 mb-2">
             {[
               {
                 id: "urina",
@@ -1719,6 +1893,12 @@ export default function BancadaOperacionalPage() {
                 label: "🔬 Rápidos",
                 count: contagensBancadas.imuno,
                 sub: "Pos / Neg",
+              },
+              {
+                id: "vdrl_lote",
+                label: "📦 VDRL Lote",
+                count: contagensBancadas.vdrlLote,
+                sub: "Acumulado",
               },
               {
                 id: "coag",
@@ -1784,6 +1964,11 @@ export default function BancadaOperacionalPage() {
                   id: "vdrl",
                   label: `🔬 VDRL (${contagensBancadas.vdrl})`,
                   count: contagensBancadas.vdrl,
+                },
+                {
+                  id: "dengue",
+                  label: `🦟 Dengue (${contagensBancadas.dengue})`,
+                  count: contagensBancadas.dengue,
                 },
                 {
                   id: "abo",
@@ -2421,6 +2606,21 @@ export default function BancadaOperacionalPage() {
                       { label: "Abundante", value: "Abundante", isAbnormal: true },
                     ]}
                   />
+                  <QuickChipSelect
+                    compact
+                    label="Filamentos de Muco"
+                    sublabel="Sedimentoscopia"
+                    value={form.muco || "Ausentes"}
+                    onChange={(val) => setForm({ ...form, muco: val })}
+                    allowCustom
+                    options={[
+                      { label: "Ausentes", value: "Ausentes" },
+                      { label: "Raros (+)", value: "Raros (+)" },
+                      { label: "Alguns (++)", value: "Alguns (++)", isAbnormal: true },
+                      { label: "Numerosos (+++)", value: "Numerosos (+++)", isAbnormal: true },
+                      { label: "Abundantes (++++)", value: "Abundantes (++++)", isAbnormal: true },
+                    ]}
+                  />
 
                   <div className="space-y-2 bg-slate-50/70 p-2.5 rounded-xl border border-slate-200">
                     <div className="flex items-center justify-between">
@@ -2713,6 +2913,11 @@ export default function BancadaOperacionalPage() {
                         label: "VDRL",
                       },
                       {
+                        ativo: temDengue,
+                        toggle: () => setTemDengue(!temDengue),
+                        label: "Dengue",
+                      },
+                      {
                         ativo: temAboRh,
                         toggle: () => setTemAboRh(!temAboRh),
                         label: "ABO / Rh",
@@ -2759,6 +2964,7 @@ export default function BancadaOperacionalPage() {
               {!temProteinuriaRapida &&
                 !temAboRh &&
                 !temVdrl &&
+                !temDengue &&
                 !temBetaHcg &&
                 !temProvasInflamatorias &&
                 !temVhs && (
@@ -2775,27 +2981,100 @@ export default function BancadaOperacionalPage() {
 
               {/* VDRL (SÓ RENDERIZA SE O PACIENTE TIVER VDRL!) */}
               {temVdrl && (
-                <div className="p-2.5 bg-purple-50/60 border border-purple-200 rounded-xl space-y-1.5">
+                <div className="p-2.5 bg-purple-50/60 border border-purple-200 rounded-xl space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-black text-purple-950 uppercase flex items-center gap-1">
                       🔬 VDRL (Sífilis)
                     </span>
-                    <span className="text-[9.5px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded">
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVdrlAcumularLote(false);
+                          if (resultadoVdrl === "Aguardando lote semanal") setResultadoVdrl("Não Reagente");
+                        }}
+                        className={`px-2 py-0.5 text-[9.5px] font-bold rounded ${
+                          !vdrlAcumularLote
+                            ? "bg-purple-700 text-white"
+                            : "bg-purple-100 text-purple-800 hover:bg-purple-200"
+                        }`}
+                      >
+                        Realizar Hoje
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVdrlAcumularLote(true);
+                          setResultadoVdrl("Aguardando lote semanal");
+                        }}
+                        className={`px-2 py-0.5 text-[9.5px] font-bold rounded flex items-center gap-1 ${
+                          vdrlAcumularLote
+                            ? "bg-amber-600 text-white"
+                            : "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                        }`}
+                      >
+                        📦 Acumular Lote (Outro Dia)
+                      </button>
+                    </div>
+                  </div>
+
+                  {vdrlAcumularLote ? (
+                    <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-lg text-amber-950 text-xs space-y-1">
+                      <span className="font-black block text-amber-900">
+                        📦 VDRL Agrupado Para Rodagem em Lote Semanal
+                      </span>
+                      <p className="text-[11px] text-amber-800 leading-tight">
+                        Este exame não será liberado hoje. Ele fica acumulado e visível na aba <strong>"VDRL em Lote"</strong> para titulação conjunta.
+                      </p>
+                    </div>
+                  ) : (
+                    <QuickChipSelect
+                      compact
+                      label="Resultado VDRL"
+                      value={resultadoVdrl}
+                      onChange={setResultadoVdrl}
+                      allowCustom
+                      options={[
+                        { label: "Não Reagente", value: "Não Reagente" },
+                        { label: "Reagente 1:1", value: "Reagente 1/1", isAbnormal: true },
+                        { label: "Reagente 1:2", value: "Reagente 1/2", isAbnormal: true },
+                        { label: "Reagente 1:4", value: "Reagente 1/4", isAbnormal: true },
+                        { label: "Reagente 1:8", value: "Reagente 1/8", isAbnormal: true },
+                        { label: "Reagente 1:16", value: "Reagente 1/16", isAbnormal: true },
+                        { label: "Reagente 1:32", value: "Reagente 1/32", isAbnormal: true },
+                        { label: "Reagente 1:64", value: "Reagente 1/64", isAbnormal: true },
+                      ]}
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* TESTE RÁPIDO DE DENGUE (NS1 / IGG / IGM) */}
+              {temDengue && (
+                <div className="p-2.5 bg-emerald-50/60 border border-emerald-200 rounded-xl space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black text-emerald-950 uppercase flex items-center gap-1">
+                      🦟 Dengue (Teste Rápido NS1 / IgG / IgM)
+                    </span>
+                    <span className="text-[9.5px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
                       Exame do Paciente
                     </span>
                   </div>
                   <QuickChipSelect
                     compact
-                    label="Resultado VDRL"
-                    value={resultadoVdrl}
-                    onChange={setResultadoVdrl}
+                    label="Resultado da Dengue"
+                    value={resultadoDengue}
+                    onChange={setResultadoDengue}
+                    allowCustom
                     options={[
-                      { label: "Não Reagente", value: "Não Reagente" },
-                      { label: "Reagente 1:1", value: "Reagente 1/1", isAbnormal: true },
-                      { label: "Reagente 1:2", value: "Reagente 1/2", isAbnormal: true },
-                      { label: "Reagente 1:4", value: "Reagente 1/4", isAbnormal: true },
-                      { label: "Reagente 1:8", value: "Reagente 1/8", isAbnormal: true },
-                      { label: "Reagente ≥ 1:16", value: "Reagente 1/16", isAbnormal: true },
+                      { label: "Não Reagente (Geral)", value: "Não Reagente (NS1 / IgG / IgM)" },
+                      { label: "NS1 Reagente (Agudo)", value: "NS1 Reagente", isAbnormal: true },
+                      { label: "IgM Reagente (Recente)", value: "IgM Reagente", isAbnormal: true },
+                      { label: "IgG Reagente (Pregresso)", value: "IgG Reagente", isAbnormal: true },
+                      { label: "NS1 + IgM Reagentes", value: "NS1 e IgM Reagentes", isAbnormal: true },
+                      { label: "IgM + IgG Reagentes", value: "IgM e IgG Reagentes", isAbnormal: true },
+                      { label: "Reagente Geral", value: "Reagente", isAbnormal: true },
+                      { label: "Inconclusivo / Repetir", value: "Inconclusivo / Repetir Amostra", isAbnormal: true },
                     ]}
                   />
                 </div>
@@ -3155,7 +3434,158 @@ export default function BancadaOperacionalPage() {
             </section>
           )}
 
-          {/* OBSERVAÇÕES RÁPIDAS */}
+          {/* 5. ABA DEDICADA: VDRL EM LOTE (SÍFILIS NÃO REALIZADOS / ACUMULADOS) */}
+          {bancadaAtiva === "vdrl_lote" && (
+            <section className="bg-white rounded-2xl border-2 border-purple-300 shadow-md p-3.5 mb-4 space-y-4 animate-in fade-in duration-200">
+              <div className="pb-3 border-b border-purple-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 bg-purple-700 text-white rounded-xl shadow-xs">
+                      <Package className="w-5 h-5" />
+                    </span>
+                    <div>
+                      <h2 className="text-sm font-black text-purple-950 uppercase tracking-tight flex items-center gap-1.5">
+                        Lote de VDRL Acumulado (Sífilis)
+                        <span className="text-xs bg-purple-100 text-purple-900 px-2 py-0.5 rounded-full font-bold">
+                          {listaVdrlLote.length} pendente(s)
+                        </span>
+                      </h2>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        Exames acumulados para processamento e titulação conjunta em lote semanal
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={definirTodosVdrlNaoReagente}
+                    className="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-900 border border-purple-300 rounded-xl text-xs font-bold active:scale-95 transition flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>⚡ Definir Todos Não Reagente</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSalvandoLote || listaVdrlLote.length === 0}
+                    onClick={salvarTodoLoteVdrl}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-sm active:scale-95 transition flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>{isSalvandoLote ? "Salvando..." : "Salvar Todo o Lote"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {listaVdrlLote.length === 0 ? (
+                <div className="text-center py-10 bg-purple-50/40 rounded-2xl border border-dashed border-purple-200 space-y-2">
+                  <CheckCircle2 className="w-8 h-8 text-purple-600 mx-auto" />
+                  <p className="text-sm font-bold text-purple-950">
+                    Nenhum VDRL pendente ou acumulado!
+                  </p>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    Todos os exames de VDRL da rotina já foram liberados e finalizados com sucesso.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <div className="text-[11px] font-bold text-slate-500 uppercase flex items-center justify-between px-1">
+                    <span>Amostras aguardando titulação ({listaVdrlLote.length})</span>
+                    <span>Toque na titulação para preencher:</span>
+                  </div>
+
+                  <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden bg-white">
+                    {listaVdrlLote.map((pac, idx) => {
+                      const pront = formatarProntuario(pac.prontuario);
+                      const resAtual = vdrlLoteResultados[pront] || "Não Reagente";
+                      const laudoExistente = laudosDia.find(
+                        (l) => formatarProntuario(l.prontuario) === pront
+                      );
+                      const estaAcumulado =
+                        laudoExistente?.vdrl_acumular_lote ||
+                        laudoExistente?.resultado_vdrl === "Aguardando lote semanal";
+
+                      return (
+                        <div
+                          key={pront + idx}
+                          className="p-3 hover:bg-purple-50/20 transition flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+                        >
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono text-xs font-black bg-purple-100 text-purple-900 px-1.5 py-0.2 rounded">
+                                #{idx + 1}
+                              </span>
+                              <span className="font-mono text-xs font-bold text-slate-700">
+                                {pront}
+                              </span>
+                              <span className="text-xs font-black text-slate-900 uppercase">
+                                {pac.nome_paciente}
+                              </span>
+                            </div>
+                            <div className="text-[10.5px] text-slate-500 flex items-center gap-2">
+                              <span>Data: {pac.data || pac.data_rotina || "Hoje"}</span>
+                              {estaAcumulado && (
+                                <span className="text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded text-[9.5px] font-bold">
+                                  📦 Marcado para Lote
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {[
+                              { label: "Não Reagente", val: "Não Reagente", cor: "bg-emerald-50 text-emerald-800 border-emerald-300" },
+                              { label: "1:1", val: "Reagente 1/1", cor: "bg-purple-50 text-purple-900 border-purple-300" },
+                              { label: "1:2", val: "Reagente 1/2", cor: "bg-purple-50 text-purple-900 border-purple-300" },
+                              { label: "1:4", val: "Reagente 1/4", cor: "bg-purple-50 text-purple-900 border-purple-300" },
+                              { label: "1:8", val: "Reagente 1/8", cor: "bg-purple-50 text-purple-900 border-purple-300" },
+                              { label: "1:16", val: "Reagente 1/16", cor: "bg-purple-50 text-purple-900 border-purple-300" },
+                              { label: "1:32", val: "Reagente 1/32", cor: "bg-purple-50 text-purple-900 border-purple-300" },
+                              { label: "1:64", val: "Reagente 1/64", cor: "bg-purple-50 text-purple-900 border-purple-300" },
+                            ].map((chip) => {
+                              const ativo = resAtual === chip.val;
+                              return (
+                                <button
+                                  key={chip.val}
+                                  type="button"
+                                  onClick={() =>
+                                    setVdrlLoteResultados((prev) => ({
+                                      ...prev,
+                                      [pront]: chip.val,
+                                    }))
+                                  }
+                                  className={
+                                    "px-2 py-1 rounded-lg text-xs font-bold border transition active:scale-95 cursor-pointer " +
+                                    (ativo
+                                      ? "bg-purple-900 text-white border-purple-900 shadow-2xs"
+                                      : chip.cor + " hover:opacity-80")
+                                  }
+                                >
+                                  {chip.label}
+                                </button>
+                              );
+                            })}
+
+                            <button
+                              type="button"
+                              onClick={() => salvarIndividualLoteVdrl(pac)}
+                              className="ml-1 px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg active:scale-95 transition cursor-pointer"
+                            >
+                              Salvar
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* OBSERVAÇÕES RÁPIDAS (EXCETO NA ABA DE LOTE) */}
+          {bancadaAtiva !== "vdrl_lote" && (
+            <section className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-3 mb-4">
           <section className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-3 mb-4">
             <label className="block text-[11px] font-black text-slate-700 uppercase mb-1.5">
               Observações / Motivo de Recoleta
@@ -3185,11 +3615,12 @@ export default function BancadaOperacionalPage() {
               className="w-full px-3 py-2 text-xs text-slate-800 bg-slate-50 border border-slate-300 rounded-xl"
             />
           </section>
+          )}
         </div>
       )}
 
       {/* BARRA FIXA DE SALVAMENTO NO RODAPÉ (EXCLUSIVA PARA O CELULAR) */}
-      {modoTela === "mobile" && (
+      {modoTela === "mobile" && bancadaAtiva !== "vdrl_lote" && (
         <div className="fixed bottom-12 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-300 shadow-2xl p-2 print:hidden">
           <div className="max-w-lg mx-auto flex items-center gap-1.5">
             <button

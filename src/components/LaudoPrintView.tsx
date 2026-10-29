@@ -264,6 +264,11 @@ export const LaudoPrintView: React.FC<LaudoPrintViewProps> = ({
                 <td className="py-1.5 px-2 text-right text-slate-500">Ausente / Flora habitual</td>
               </tr>
               <tr>
+                <td className="py-1.5 px-2 font-medium">Filamentos de Muco</td>
+                <td className="py-1.5 px-2 font-bold text-slate-900">{laudo.muco || "Ausentes"}</td>
+                <td className="py-1.5 px-2 text-right text-slate-500">Ausentes</td>
+              </tr>
+              <tr>
                 <td className="py-1.5 px-2 font-medium">Cristais</td>
                 <td className="py-1.5 px-2 font-bold text-slate-900">{laudo.cristais}</td>
                 <td className="py-1.5 px-2 text-right text-slate-500">Ausentes</td>
@@ -318,7 +323,7 @@ export const LaudoPrintView: React.FC<LaudoPrintViewProps> = ({
       )}
 
       {/* SEÇÃO 4: TESTES RÁPIDOS (BETA-HCG / VDRL) SE SOLICITADO */}
-      {(laudo.tem_beta_hcg || laudo.resultado_beta_hcg || laudo.tem_vdrl || laudo.resultado_vdrl) && (
+      {(laudo.tem_beta_hcg || laudo.resultado_beta_hcg || laudo.tem_vdrl || laudo.resultado_vdrl || laudo.tem_dengue || laudo.resultado_dengue) && (
         <div className="border border-slate-300 rounded overflow-hidden mb-4 avoid-break print:border-slate-800">
           <div className="bg-slate-200 px-2.5 py-1 font-bold text-[11px] text-slate-800 border-b border-slate-300 uppercase print:bg-slate-100 flex items-center justify-between">
             <span>Testes Rápidos / Triagem Sorológica</span>
@@ -343,7 +348,18 @@ export const LaudoPrintView: React.FC<LaudoPrintViewProps> = ({
               {(laudo.tem_vdrl || laudo.resultado_vdrl) && (
                 <tr>
                   <td className="py-1.5 px-2 font-medium">VDRL / Teste Rápido Sífilis</td>
-                  <td className="py-1.5 px-2 font-black text-slate-950">{laudo.resultado_vdrl || "Não Reagente"}</td>
+                  <td className="py-1.5 px-2 font-black text-slate-950">
+                    {laudo.vdrl_acumular_lote || laudo.resultado_vdrl === "Aguardando lote semanal"
+                      ? "Aguardando lote semanal (acumulado)"
+                      : laudo.resultado_vdrl || "Não Reagente"}
+                  </td>
+                  <td className="py-1.5 px-2 text-right text-slate-500">Não Reagente</td>
+                </tr>
+              )}
+              {(laudo.tem_dengue || laudo.resultado_dengue) && (
+                <tr>
+                  <td className="py-1.5 px-2 font-medium">Teste Rápido Dengue (NS1 / IgG / IgM)</td>
+                  <td className="py-1.5 px-2 font-black text-slate-950">{laudo.resultado_dengue || "Não Reagente"}</td>
                   <td className="py-1.5 px-2 text-right text-slate-500">Não Reagente</td>
                 </tr>
               )}

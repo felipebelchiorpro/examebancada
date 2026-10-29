@@ -31,7 +31,7 @@ export interface LaudoUrina {
   leucocitos_campo: string;
   hemacias_campo: string;
   bacterias: string;
-  muco?: string;
+  muco?: string; // "Ausentes" | "Raros (+)" | "Alguns (++)" | "Numerosos (+++)" | "Abundantes (++++)"
   cristais: string;
   cilindros: string;
   outros_elementos?: string;
@@ -49,16 +49,17 @@ export interface LaudoUrina {
   resultado_vdrl?: string; // "Não Reagente" | "Reagente 1/1" | "Reagente 1/2" | "Reagente 1/4" | "Reagente 1/8" | "Reagente 1/16" | "Aguardando lote semanal"
   vdrl_acumular_lote?: boolean; // Marca para realização em lote semanal
 
+  // 3b. Teste Rápido de Dengue
+  tem_dengue?: boolean;
+  resultado_dengue?: string; // "Não Reagente (NS1 / IgG / IgM)" | "NS1 Reagente" | "IgM Reagente" | "IgG Reagente" | "NS1 e IgM Reagentes" | "Reagente" | "Inconclusivo"
+
   // 4. Provas Inflamatórias
   tem_vhs?: boolean;
   resultado_vhs?: string; // ex: "10 mm/1ª hora"
-
   tem_pcr?: boolean;
   resultado_pcr?: string; // "Negativo (< 6 mg/L)" | "Positivo" | string
-
   tem_aslo?: boolean;
   resultado_aslo?: string; // "Negativo (< 200 UI/mL)" | "Positivo"
-
   tem_fr?: boolean;
   resultado_fr?: string; // "Negativo (< 8 UI/mL)" | "Positivo"
 
@@ -79,6 +80,7 @@ export interface LaudoUrina {
   // 6. Teste Rápido de Proteinúria (Rastreio de Pré-Eclâmpsia / Gestante)
   tem_proteinuria_rapida?: boolean;
   resultado_proteinuria_rapida?: string;
+
   // 7. Grupo Sanguíneo e Fator Rh
   tem_abo_rh?: boolean;
   resultado_abo_rh?: string;
@@ -107,6 +109,7 @@ export interface RotinaItem {
   tem_beta_hcg?: boolean;
   tem_vdrl?: boolean;
   vdrl_acumular_lote?: boolean;
+  tem_dengue?: boolean;
   tem_vhs?: boolean;
   tem_pcr?: boolean;
   tem_aslo?: boolean;
@@ -137,7 +140,10 @@ export const DEFAULT_LAB_CONFIG: LabConfig = {
   registroProfissional: "CRF-SP 48.912 / Resp. Técnica",
 };
 
-export const VALORES_PADRAO_NORMAL: Omit<LaudoUrina, "data_hora" | "prontuario" | "nome_paciente" | "status" | "observacoes"> = {
+export const VALORES_PADRAO_NORMAL: Omit<
+  LaudoUrina,
+  "data_hora" | "prontuario" | "nome_paciente" | "status" | "observacoes"
+> = {
   tem_urina: true,
   volume: "60 mL",
   cor: "Amarelo ouro",
@@ -156,7 +162,7 @@ export const VALORES_PADRAO_NORMAL: Omit<LaudoUrina, "data_hora" | "prontuario" 
   leucocitos_campo: "4.000 /mL",
   hemacias_campo: "1.000 /mL",
   bacterias: "Ausentes",
-  muco: "Ausente",
+  muco: "Ausentes",
   cristais: "Ausentes",
   cilindros: "Ausentes",
   outros_elementos: "Ausentes",
@@ -168,6 +174,9 @@ export const VALORES_PADRAO_NORMAL: Omit<LaudoUrina, "data_hora" | "prontuario" 
   resultado_beta_hcg: "Negativo",
   tem_vdrl: false,
   resultado_vdrl: "Não Reagente",
+  vdrl_acumular_lote: false,
+  tem_dengue: false,
+  resultado_dengue: "Não Reagente (NS1 / IgG / IgM)",
   tem_vhs: false,
   resultado_vhs: "10 mm/1ª hora",
   tem_pcr: false,
@@ -186,7 +195,10 @@ export const VALORES_PADRAO_NORMAL: Omit<LaudoUrina, "data_hora" | "prontuario" 
   ttpa_relacao: "1.00",
 };
 
-export const VALORES_SEM_URINA: Omit<LaudoUrina, "data_hora" | "prontuario" | "nome_paciente" | "status" | "observacoes"> = {
+export const VALORES_SEM_URINA: Omit<
+  LaudoUrina,
+  "data_hora" | "prontuario" | "nome_paciente" | "status" | "observacoes"
+> = {
   ...VALORES_PADRAO_NORMAL,
   tem_urina: false,
   volume: "",
@@ -210,4 +222,7 @@ export const VALORES_SEM_URINA: Omit<LaudoUrina, "data_hora" | "prontuario" | "n
   cristais: "",
   cilindros: "",
   outros_elementos: "",
+  tem_dengue: false,
+  resultado_dengue: "Não Reagente (NS1 / IgG / IgM)",
+  vdrl_acumular_lote: false,
 };

@@ -61,6 +61,9 @@ export const CABECALHO_LAUDOS = [
   "volume",
   "resultado_aslo",
   "resultado_fr",
+  "muco",
+  "resultado_dengue",
+  "vdrl_acumular_lote",
 ];
 
 export const CABECALHO_ROTINA = [
@@ -317,7 +320,7 @@ export async function ensureSheetsExist(): Promise<{ ok: boolean; message: strin
     if (!existingTitles.includes(SHEET_NAME_LAUDOS)) {
       await sheets.spreadsheets.values.update({
         spreadsheetId: sheetId,
-        range: `${SHEET_NAME_LAUDOS}!A1:AJ1`,
+        range: `${SHEET_NAME_LAUDOS}!A1:AM1`,
         valueInputOption: "RAW",
         requestBody: { values: [CABECALHO_LAUDOS] },
       });
@@ -421,7 +424,7 @@ export async function salvarOuAtualizarLaudo(
 
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
-      range: `${SHEET_NAME_LAUDOS}!A:AJ`,
+      range: `${SHEET_NAME_LAUDOS}!A:AM`,
     });
 
     const rows = res.data.values || [];
@@ -501,9 +504,12 @@ export async function salvarOuAtualizarLaudo(
       laudo.volume || "60 mL",
       laudo.resultado_aslo || "",
       laudo.resultado_fr || "",
+      laudo.muco || "Ausentes",
+      laudo.resultado_dengue || "",
+      laudo.vdrl_acumular_lote ? "SIM" : "NAO",
     ];
     const rowData = temId ? [laudoId, ...rowValoresBase] : rowValoresBase;
-    const finalCol = temId ? "AJ" : "AI";
+    const finalCol = temId ? "AM" : "AL";
 
     const rowNumberToWrite =
       targetRowIndex > 0
@@ -597,7 +603,7 @@ export async function listarLaudos(
     try {
       const res = await sheets.spreadsheets.values.get({
         spreadsheetId: sheetId,
-        range: `${SHEET_NAME_LAUDOS}!A:AJ`,
+        range: `${SHEET_NAME_LAUDOS}!A:AM`,
       });
 
       const rows = res.data.values || [];
@@ -630,9 +636,12 @@ export async function listarLaudos(
           const resVol = (r[offset + 32] || "").toString().trim();
           const resAslo = (r[offset + 33] || "").toString().trim();
           const resFr = (r[offset + 34] || "").toString().trim();
+          const resMuco = (r[offset + 35] || "").toString().trim();
+          const resDengue = (r[offset + 36] || "").toString().trim();
+          const resVdrlLote = (r[offset + 37] || "").toString().trim().toUpperCase();
 
           const temOutroExame = Boolean(
-            resProt || resVdrl || resAbo || resPso || resBeta || resVhs || resPcr || resTp || resTtpa || resAslo || resFr
+            resProt || resVdrl || resAbo || resPso || resBeta || resVhs || resPcr || resTp || resTtpa || resAslo || resFr || resDengue
           );
 
           // Se tiver qualquer outro exame de bancada (VDRL, Proteinúria rápida, ABO/Rh, etc.)
@@ -687,6 +696,10 @@ export async function listarLaudos(
             tem_aslo: Boolean(resAslo),
             resultado_fr: resFr || undefined,
             tem_fr: Boolean(resFr),
+            muco: temUrina ? resMuco || "Ausentes" : resMuco,
+            resultado_dengue: resDengue || undefined,
+            tem_dengue: Boolean(resDengue),
+            vdrl_acumular_lote: resVdrlLote === "SIM" || resVdrl === "Aguardando lote semanal",
           });
         }
         laudos = laudos.reverse();

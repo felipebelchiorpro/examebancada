@@ -89,7 +89,13 @@ export const MapaBancadaPrintView: React.FC<MapaBancadaPrintViewProps> = ({
     if (exameUpper.includes("PCR")) return l.resultado_pcr || "";
     if (exameUpper.includes("ASLO")) return l.resultado_aslo || "";
     if (exameUpper.includes("FR") || exameUpper.includes("REUMATOIDE")) return l.resultado_fr || "";
-    if (exameUpper.includes("VDRL")) return l.resultado_vdrl || "";
+    if (exameUpper.includes("VDRL")) {
+      if (l.vdrl_acumular_lote || l.resultado_vdrl === "Aguardando lote semanal") {
+        return "Aguardando lote semanal (acumulado)";
+      }
+      return l.resultado_vdrl || "";
+    }
+    if (exameUpper.includes("DENGUE") || exameUpper.includes("NS1")) return l.resultado_dengue || "";
     if (exameUpper.includes("VHS") || exameUpper.includes("HEMOSSEDIMENTA")) return l.resultado_vhs || "";
     if (exameUpper.includes("BETA") || exameUpper.includes("HCG")) return l.resultado_beta_hcg || "";
     return "";
